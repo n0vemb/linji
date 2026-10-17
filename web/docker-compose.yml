@@ -18,7 +18,8 @@ services:
     build: .
     container_name: linji
     ports:
-      - "8787:8787"
+      # 外部 8788（服务器 8787 已被其他 Node 项目占用）；容器内仍是 8787
+      - "8788:8787"
     volumes:
       # 数据持久化：SQLite 库 + 上传/采集的媒体都在这里
       - ./server/data:/app/server/data

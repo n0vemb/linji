@@ -14,7 +14,7 @@ module.exports = {
       instances: 1,
       env: {
         NODE_ENV: 'production',
-        PORT: 8787,
+        PORT: 8788,
         // JWT_SECRET 必须在宝塔「环境变量」或 .env 里覆盖为长随机串
         JWT_SECRET: 'change-me-in-production',
         // 海外服务器直连平台，留空；被墙网络调试才需要代理
