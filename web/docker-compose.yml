@@ -1,5 +1,7 @@
 # LinJi·灵集 生产部署（海外 VPS / 宝塔 Docker 管理器）
-# 用法：JWT_SECRET=<随机长字符串> docker compose up -d --build
+# 用法：先在 web/ 下准备 .env（cp .env.production.example .env 并填 JWT_SECRET），
+#       然后 docker compose up -d --build
+# JWT_SECRET 未设置时会拒绝启动（:? 语法），防止带弱密钥上线
 services:
   # 抖音 / TikTok 解析 sidecar（Douyin_TikTok_Download_API，20k+ star，Apache-2.0）
   # 纯 Python 实现 X-Bogus/a_bogus 签名 + 游客身份，我们不做 HTTP 客户端之外的任何事。
@@ -23,7 +25,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: "8787"
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      # 缺失即拒绝启动（fail-fast），杜绝弱密钥上线
+      JWT_SECRET: ${JWT_SECRET:?请在 .env 或环境变量中设置 JWT_SECRET（openssl rand -base64 48）}
       # 海外服务器直连抖音/小红书/YouTube，无需代理（留空）
       COLLECT_PROXY: ""
       # 抖音/TikTok 解析走 sidecar（同一 compose 网络内按服务名访问）
