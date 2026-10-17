@@ -209,7 +209,10 @@ export async function collectFromShareText(
       if (images.length > 0 && !coverImage) coverImage = images[0];
     }
 
-    if (f.videoUrl) {
+    if (f.videoLocalUrl) {
+      // 采集器已自行下载并转存到本地 /media，直接用，不再二次拉取易失效的 CDN 直链
+      videoUrl = f.videoLocalUrl;
+    } else if (f.videoUrl) {
       videoUrl = f.videoUrl; // 视频地址先记下，转存失败则置空并说明
       const bin = await fetchBinary(f.videoUrl, {
         ua: UA_MOBILE,

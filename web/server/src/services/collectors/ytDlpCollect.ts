@@ -11,9 +11,10 @@
  */
 import type { ParsedShare } from '../../../../src/utils/shareLink';
 import { extractTags } from '../../../../src/utils/shareLink';
-import { ytDlpDumpJson } from './ytdlp';
+import { ytDlpDumpJson, ytDlpDownload } from './ytdlp';
 import { downloadImage } from './download';
 import { config } from '../../env';
+import { saveBuffer } from '../mediaStore';
 import type { PlatformFindings } from './types';
 
 /**
@@ -44,11 +45,18 @@ export async function collectViaYtDlp(
   }
   if (meta.uploader) findings.author = meta.uploader;
 
-  // 视频直链（reel / 视频帖 / YouTube）
+  // 视频：让 yt-dlp 直接把文件下下来转存（避免签名直链二次 fetch 失败；
+  // TikTok 经此拿到的是无水印原片）。失败再退回远程直链让编排层尝试。
   if (meta.videoUrl) {
-    findings.videoUrl = meta.videoUrl;
     findings.mediaType = 'video';
-    findings.fetched.push('视频地址（无水印）');
+    const dl = await ytDlpDownload(parsed.url, config.collectProxy || undefined);
+    if (dl) {
+      findings.videoLocalUrl = saveBuffer(dl.buffer, dl.ext, 'collected');
+      findings.fetched.push('视频已转存（无水印）');
+    } else {
+      findings.videoUrl = meta.videoUrl;
+      findings.fetched.push('视频地址');
+    }
   } else {
     findings.mediaType = 'image';
   }

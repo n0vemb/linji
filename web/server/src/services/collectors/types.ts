@@ -14,6 +14,8 @@ export interface PlatformFindings {
   images?: string[];
   /** 远程视频 URL（转存失败则降级） */
   videoUrl?: string | null;
+  /** 采集器已自行下载并转存的本地视频 URL（/media/...）；优先于 videoUrl 使用，避免二次拉取易失效的 CDN 直链 */
+  videoLocalUrl?: string | null;
   /** 素材类型 */
   mediaType?: MediaType;
   /** 短链展开后的最终 URL（内容 ID 已更新时同步） */

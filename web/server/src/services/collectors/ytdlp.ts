@@ -10,6 +10,9 @@
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { config } from '../../env';
 
 const execFileAsync = promisify(execFile);
@@ -119,4 +122,80 @@ export async function ytDlpDumpJson(
 /** yt-dlp 是否可用（供启动日志 / 降级提示） */
 export async function ytDlpAvailable(): Promise<boolean> {
   return hasYtDlp();
+}
+
+export interface DownloadedMedia {
+  buffer: Buffer;
+  /** 文件扩展名（不含点），如 mp4 / webm */
+  ext: string;
+}
+
+/**
+ * 直接下载视频文件（而非只取直链）。
+ *
+ * 为什么不直接用直链 fetch：YouTube / TikTok 的直链带签名、常要求特定 UA / Range，
+ * 用 curl 二次拉取极易失败（"视频文件未能转存"）。让 yt-dlp 自己把文件下下来最稳，
+ * 且天然免登录、TikTok 拿到的即无水印原片。
+ *
+ * 格式选择 `b[acodec!=none]`：挑「自带音轨」的最佳渐进式格式，避免 ffmpeg 合并
+ * （镜像里没装 ffmpeg）。YouTube / TikTok 均有此类渐进式流。
+ */
+export async function ytDlpDownload(
+  url: string,
+  proxy?: string
+): Promise<DownloadedMedia | null> {
+  if (!(await hasYtDlp())) return null;
+
+  const safe = `linji-yt-${process.pid}-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+  const outTemplate = path.join(os.tmpdir(), `${safe}.%(ext)s`);
+  const args = [
+    '-f',
+    'b[acodec!=none]/best[acodec!=none]',
+    '-o',
+    outTemplate,
+    '--no-warnings',
+    '--no-playlist',
+    '--no-progress',
+    '--user-agent',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    url,
+  ];
+  const env = { ...process.env };
+  if (proxy) {
+    env.http_proxy = proxy;
+    env.https_proxy = proxy;
+  }
+
+  const cleanup = () => {
+    try {
+      for (const f of fs.readdirSync(os.tmpdir())) {
+        if (f.startsWith(safe)) fs.unlinkSync(path.join(os.tmpdir(), f));
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  try {
+    await execFileAsync(config.ytDlpPath, args, {
+      timeout: 120_000,
+      maxBuffer: 64 * 1024 * 1024,
+      env,
+    });
+    const files = fs
+      .readdirSync(os.tmpdir())
+      .filter((f) => f.startsWith(safe))
+      .map((f) => path.join(os.tmpdir(), f));
+    if (files.length === 0) return null;
+    const file = files[0];
+    const buffer = fs.readFileSync(file);
+    const ext = path.extname(file).replace(/^\./, '') || 'mp4';
+    cleanup();
+    return buffer.byteLength > 0 ? { buffer, ext } : null;
+  } catch {
+    cleanup();
+    return null;
+  }
 }
