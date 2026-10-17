@@ -154,7 +154,7 @@ export async function ytDlpDownload(
   const outTemplate = path.join(os.tmpdir(), `${safe}.%(ext)s`);
   const args = [
     '-f',
-    'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best',
+    'bestvideo[height<=720][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best',
     '--merge-output-format',
     'mp4',
     '-o',

@@ -125,7 +125,9 @@ export async function collectFromShareText(
     if (parsed.platform === 'youtube') {
       // 主通道：yt-dlp 拉真视频（免登录，公开内容）。仅 oEmbed 拿不到视频。
       const ydl = await collectViaYtDlp(parsed);
-      if (ydl.videoUrl) {
+      // 注意：yt-dlp 通道把视频直接下载转存到本地（videoLocalUrl），
+      // 不一定带远程直链（videoUrl），两者任一存在即视为抓到视频。
+      if (ydl.videoUrl || ydl.videoLocalUrl) {
         await applyFindings(ydl);
       } else {
         // 兜底：oEmbed 至少给标题 / 作者 / 封面
