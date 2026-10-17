@@ -27,6 +27,11 @@ export default function StatusChip({ status }: StatusChipProps) {
       color: COLORS.status.reject,
       bg: 'rgba(239,68,68,0.10)',
     },
+    draft: {
+      text: STATUS_TEXT.draft,
+      color: COLORS.sub2,
+      bg: 'rgba(113,113,122,0.10)',
+    },
   };
   const { text, color, bg } = map[status];
   return (
@@ -37,7 +42,7 @@ export default function StatusChip({ status }: StatusChipProps) {
         gap: 0.5,
         px: 1,
         py: 0.25,
-        borderRadius: 1,
+        borderRadius: '6px',
         fontSize: 12,
         fontWeight: 600,
         color,

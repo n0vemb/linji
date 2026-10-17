@@ -4,3 +4,9 @@ dist-ssr
 *.local
 .DS_Store
 .vite
+
+# 后端运行时数据（SQLite 库 + 上传/采集媒体）——绝不进 git
+server/data/
+
+# 验证截图（内部验证产物，非交付物）
+.preview_shots/

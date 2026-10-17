@@ -11,10 +11,13 @@ import type {
 /**
  * 本地评分器（启发式，稳定非随机）。
  * 基于：标题利益点 / 文案长度 / 话题数 / 封面有无 → 四维度分。
- * 合规：敏感词命中 → 硬阻断(block)；否则任意维度 < 60 → 风险(warn)；否则通过(pass)。
+ * 合规：交给 compliance.ts 规则引擎（高置信硬阻断 + 广告法极限词风险提示）。
  *
  * 架构 §8 待确认问题 #5 的默认建议：用本地函数让数据更真实，而非纯随机。
  */
+
+import { checkCompliance } from './compliance';
+import { generateLongTailWords } from './longTail';
 
 const BENEFIT_WORDS = [
   '教程', '攻略', '如何', '秘籍', '推荐', '盘点', '必备', '分享', '测评',
@@ -22,29 +25,8 @@ const BENEFIT_WORDS = [
   '搭配', '显瘦', '显高', '种草',
 ];
 
-/** 广告法 / 平台敏感词（命中即硬阻断） */
-const SENSITIVE_WORDS = [
-  '最', '第一', '国家级', '唯一', '绝对', '百分百', '限时', '点击链接',
-  '二维码', '秒杀', '最低价', '史上', ' guaranteed', '代购', '加微信', '微信',
-  '联系方式', '私聊',
-];
-
-const LONG_TAIL_POOL_HIGH = ['爆款标题公式', '高转化文案', '封面构图'];
-const LONG_TAIL_POOL_LOW = [
-  '夏日穿搭小个子', '通勤穿搭显高', '基础款叠穿', '梨形身材穿搭',
-  '平价好物', '学生党必备', '显瘦神裤', '氛围感拍照',
-];
-
 function clamp(value: number, lo = 0, hi = 100): number {
   return Math.max(lo, Math.min(hi, Math.round(value)));
-}
-
-function findSensitive(text: string): string | null {
-  const lower = text.toLowerCase();
-  for (const word of SENSITIVE_WORDS) {
-    if (lower.includes(word.toLowerCase())) return word;
-  }
-  return null;
 }
 
 function scoreTitle(title: string): number {
@@ -76,9 +58,11 @@ function scoreTopics(tags: string[]): number {
   return 35;
 }
 
-function scoreCover(hasCover: boolean, mediaType: MediaType): number {
-  if (!hasCover) return 35;
-  return clamp(74 + (mediaType === 'video' ? 6 : 4));
+function scoreCover(imageCount: number, mediaType: MediaType): number {
+  if (imageCount <= 0) return 35;
+  // 多图组图在小红书 / 抖音图文笔记里是加分项（信息量更足）
+  const base = 70 + Math.min(imageCount, 6) * 2;
+  return clamp(base + (mediaType === 'video' ? 6 : 4));
 }
 
 function levelOf(score: number): ComplianceLevel {
@@ -102,7 +86,7 @@ export interface ScoreInput {
   copy: string;
   tags: string[];
   mediaType: MediaType;
-  coverImage: string;
+  images: string[];
   platform: Platform;
 }
 
@@ -113,41 +97,45 @@ export function generateReport(input: ScoreInput): HealthReport {
   const titleScore = scoreTitle(input.title);
   const copyScore = scoreCopy(input.copy);
   const topicsScore = scoreTopics(input.tags);
-  const coverScore = scoreCover(!!input.coverImage, input.mediaType);
+  const coverScore = scoreCover(input.images.length, input.mediaType);
 
   const dimensions: HealthDimension[] = [
     buildDimension('title', '标题吸引力', titleScore, detailFor('title', titleScore, input.title)),
     buildDimension('copy', '文案完整度', copyScore, detailFor('copy', copyScore, input.copy)),
     buildDimension('topics', '话题覆盖', topicsScore, detailFor('topics', topicsScore, input.tags.join(' '))),
-    buildDimension('cover', '封面表现', coverScore, detailFor('cover', coverScore, input.coverImage)),
+    buildDimension('cover', '封面表现', coverScore, detailFor('cover', coverScore, input.images)),
   ];
 
   const totalScore = clamp(
     titleScore * 0.25 + copyScore * 0.3 + topicsScore * 0.2 + coverScore * 0.25
   );
 
-  const sensitive = findSensitive(
-    `${input.title} ${input.copy} ${input.tags.join(' ')}`
-  );
-  let compliance: HealthCompliance;
-  if (sensitive) {
-    compliance = {
-      level: 'block',
-      blockingReason: `检测到敏感词「${sensitive}」，违反广告合规，需修改后提交`,
-    };
-  } else if (
-    titleScore < 60 ||
-    copyScore < 60 ||
-    topicsScore < 60 ||
-    coverScore < 60
-  ) {
-    compliance = { level: 'warn', blockingReason: null };
-  } else {
-    compliance = { level: 'pass', blockingReason: null };
-  }
+  // 合规判定：规则引擎（高置信硬阻断 / 广告法极限词风险提示）
+  const complianceResult = checkCompliance({
+    title: input.title,
+    copy: input.copy,
+    tags: input.tags,
+  });
+  const overall = complianceResult.overall;
 
-  const longTailWords =
-    topicsScore < 80 ? LONG_TAIL_POOL_LOW.slice(0, 3) : LONG_TAIL_POOL_HIGH.slice(0, 3);
+  // 合规 warn 优先于维度 warn：只要有风险提示就不是纯通过
+  const compliance: HealthCompliance = {
+    level:
+      overall.level !== 'pass'
+        ? overall.level
+        : titleScore < 60 || copyScore < 60 || topicsScore < 60 || coverScore < 60
+          ? 'warn'
+          : 'pass',
+    blockingReason: overall.blockingReason,
+    hits: overall.hits,
+  };
+
+  // 长尾词建议：基于当前内容推导（品类/场景/人群/意图组合）
+  const longTailSuggestions = generateLongTailWords({
+    title: input.title,
+    copy: input.copy,
+    tags: input.tags,
+  });
 
   return {
     id: `rpt_${input.inspirationID}`,
@@ -156,13 +144,18 @@ export function generateReport(input: ScoreInput): HealthReport {
     scoreLabel: '内部经验模型 · 非平台权威数据',
     dimensions,
     compliance,
-    longTailWords,
+    longTailWords: longTailSuggestions.map((s) => s.word),
+    longTailDetails: longTailSuggestions,
     editableByCreator: true,
     generatedAt: new Date().toISOString(),
   };
 }
 
-function detailFor(kind: HealthDimensionKey, score: number, raw: string): string {
+function detailFor(
+  kind: HealthDimensionKey,
+  score: number,
+  raw: string | string[]
+): string {
   switch (kind) {
     case 'title':
       return score >= 80
@@ -175,19 +168,20 @@ function detailFor(kind: HealthDimensionKey, score: number, raw: string): string
         ? '文案信息充分，结构清晰'
         : score >= 60
           ? '文案结构尚可，建议补充细节'
-          : `文案偏短（${raw.trim().length} 字），信息不足`;
+          : `文案偏短（${(raw as string).trim().length} 字），信息不足`;
     case 'topics':
       return score >= 80
         ? '话题覆盖全面'
         : score >= 60
           ? '话题数量适中，建议补充长尾词'
           : '话题过少，建议补充 #话题 提升覆盖';
-    case 'cover':
-      return score >= 80
-        ? '封面主体突出，表现优秀'
-        : score >= 60
-          ? '封面观感良好，建议提升对比度'
-          : '缺少封面或封面表现一般，建议优化';
+    case 'cover': {
+      const imgs = raw as string[];
+      if (score < 60) return '缺少封面或封面表现一般，建议优化';
+      const n = imgs.length;
+      if (n <= 1) return '封面主体突出，表现优秀';
+      return `已上传 ${n} 张组图，封面主体突出`;
+    }
     default:
       return '';
   }

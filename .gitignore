@@ -1,0 +1,5 @@
+# macOS
+.DS_Store
+
+# WorkBuddy 项目数据（记忆 / 截图等，非交付物）
+.workbuddy/

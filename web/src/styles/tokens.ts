@@ -28,8 +28,37 @@ export const FONTS = {
 
 /** 布局 token：侧栏 232px、顶栏 64px */
 export const LAYOUT = {
-  sidebarWidth: 232, // 左侧固定侧栏宽度
-  topbarHeight: 64, // 右侧顶栏高度
+  sidebarWidth: 232, // 左侧固定侧栏宽度（仅桌面）
+  topbarHeight: 64, // 右侧顶栏高度（桌面）；手机端为 52
+  mobileTopbarHeight: 52,
+  /** 底部标签栏高度（仅手机端） */
+  mobileTabBarHeight: 56,
+  /** iOS home indicator 安全区 */
+  safeAreaBottom: 'env(safe-area-inset-bottom, 0px)',
+  safeAreaTop: 'env(safe-area-inset-top, 0px)',
+} as const;
+
+/**
+ * 手机端交互规格。
+ * 依据：Apple HIG / Material 均要求主要触摸目标 ≥ 44px（iOS 44pt / Android 48dp）。
+ */
+export const TOUCH = {
+  /** 最小可点区域 */
+  minTarget: 44,
+  /** 导航项高度 */
+  navItemHeight: 48,
+  /** 按钮最小高度 */
+  buttonHeight: 40,
+  /** 底部固定操作条高度 */
+  actionBarHeight: 60,
+} as const;
+
+/** 响应式间距：手机端更紧凑，避免滚动过多 */
+export const SPACING = {
+  pagePaddingMobile: 12,
+  pagePaddingDesktop: 28,
+  cardGapMobile: 10,
+  cardGapDesktop: 16,
 } as const;
 
 /** 合规层级 → 颜色映射（pass 绿 / warn 琥珀 / block 红） */
@@ -47,7 +76,11 @@ export function healthColor(score: number): string {
 }
 
 /** 灵感状态 → 展示文案（架构 §7.4） */
-export const STATUS_TEXT: Record<'pending' | 'approved' | 'rejected', string> = {
+export const STATUS_TEXT: Record<
+  'draft' | 'pending' | 'approved' | 'rejected',
+  string
+> = {
+  draft: '草稿 · 未提交',
   approved: '已通过 · 可编辑',
   pending: '待审核',
   rejected: '已驳回',

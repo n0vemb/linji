@@ -4,13 +4,25 @@ import { COLORS, LAYOUT } from '@/styles/tokens';
 import { NAV_ITEMS } from '@/router/paths';
 import NavItem from './NavItem';
 import { useAppStore } from '@/store/useAppStore';
+import { apiMode } from '@/data/services/apiMode';
+
+interface SidebarProps {
+  /** 手机端抽屉模式下点击导航后应关闭抽屉 */
+  onNavigate?: () => void;
+}
 
 /**
- * 侧栏（232px 固定）：Logo + 工作区分组 + 导航 + 弹性留白 + 用户卡。
+ * 侧栏内容（桌面固定 232px / 手机抽屉内复用同一套）。
  * 节点 2:1 区域。
  */
-export default function Sidebar() {
+export default function Sidebar({ onNavigate }: SidebarProps) {
   const currentUser = useAppStore((state) => state.currentUser);
+  const live = apiMode() === 'live';
+
+  // live 模式：审核台仅对管理员展示（后端也有权限门控，这里只是不暴露入口）
+  const items = live && currentUser.role !== 'admin'
+    ? NAV_ITEMS.filter((entry) => entry.path !== '/audit')
+    : NAV_ITEMS;
 
   return (
     <Box
@@ -18,7 +30,7 @@ export default function Sidebar() {
       style={{
         width: LAYOUT.sidebarWidth,
         minWidth: LAYOUT.sidebarWidth,
-        height: '100vh',
+        height: '100%',
         backgroundColor: COLORS.surface,
         borderRight: `1px solid ${COLORS.line}`,
         padding: '20px 16px',
@@ -31,9 +43,10 @@ export default function Sidebar() {
           style={{
             width: 32,
             height: 32,
-            borderRadius: 9,
+            borderRadius: '10px',
             backgroundColor: COLORS.primary,
             color: '#fff',
+            flexShrink: 0,
           }}
         >
           <AutoAwesomeOutlinedIcon style={{ fontSize: 20 }} />
@@ -63,8 +76,8 @@ export default function Sidebar() {
 
       {/* 导航（固定顺序） */}
       <Box className="flex flex-col gap-1">
-        {NAV_ITEMS.map((entry) => (
-          <NavItem key={entry.label} entry={entry} />
+        {items.map((entry) => (
+          <NavItem key={entry.label} entry={entry} onNavigate={onNavigate} />
         ))}
       </Box>
 
@@ -89,6 +102,7 @@ export default function Sidebar() {
             color: COLORS.primary,
             fontWeight: 700,
             fontSize: 14,
+            flexShrink: 0,
           }}
         >
           {currentUser.name.slice(0, 1)}

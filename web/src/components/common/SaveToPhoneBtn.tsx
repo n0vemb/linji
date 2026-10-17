@@ -22,7 +22,7 @@ export default function SaveToPhoneBtn({
       style={{
         backgroundColor: 'rgba(0,0,0,0.62)',
         color: '#FFFFFF',
-        borderRadius: 8,
+        borderRadius: '8px',
         fontSize: 12,
         lineHeight: 1.4,
         padding: '4px 10px',

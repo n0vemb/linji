@@ -19,12 +19,11 @@ export default function HealthBadge({ score, size = 'md' }: HealthBadgeProps) {
         display: 'inline-flex',
         alignItems: 'baseline',
         gap: 0.25,
-        backgroundColor: 'rgba(255,255,255,0.92)',
-        borderRadius: 1.5,
+        backgroundColor: 'rgba(255,255,255,0.95)',
+        borderRadius: '999px',
         px: big ? 1 : 0.75,
         py: 0.25,
         border: `1px solid ${color}`,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
       }}
     >
       <Box

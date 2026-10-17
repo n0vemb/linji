@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Box } from '@mui/material';
 import AppLayout from '@/components/layout/AppLayout';
 import PlazaPage from '@/pages/PlazaPage';
 import DetailPage from '@/pages/DetailPage';
@@ -7,17 +8,45 @@ import AuditPage from '@/pages/AuditPage';
 import MinePage from '@/pages/MinePage';
 import HealthPage from '@/pages/HealthPage';
 import FavoritesPage from '@/pages/FavoritesPage';
+import LoginPage from '@/pages/LoginPage';
+import { useAppStore } from '@/store/useAppStore';
+import { COLORS } from '@/styles/tokens';
 import { PATHS } from './paths';
 
 /**
  * 路由表（React Router v6）。
+ * BrowserRouter 在 main.tsx（ThemeProvider 内层），这里只放 Routes。
  * AppLayout 作为父壳（侧栏 + 顶栏 + <Outlet/>），各页面作为子路由。
- * 详情 / 体检 / 编辑为动态参数路由。
+ * live 模式未登录时，除 /login 外一律重定向到登录页。
  */
+
+/** 登录态守卫：live 模式未登录 → /login */
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const authReady = useAppStore((state) => state.authReady);
+  const authUser = useAppStore((state) => state.authUser);
+  const location = useLocation();
+
+  if (!authReady) {
+    // 登录态恢复中：空白等待（避免刷新页面时闪登录页）
+    return <Box sx={{ minHeight: '100dvh', backgroundColor: COLORS.canvas }} />;
+  }
+  if (!authUser) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+  return <>{children}</>;
+}
+
 export default function AppRouter() {
   return (
     <Routes>
-      <Route element={<AppLayout />}>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        element={
+          <RequireAuth>
+            <AppLayout />
+          </RequireAuth>
+        }
+      >
         <Route index element={<PlazaPage />} />
         <Route path={PATHS.PLAZA} element={<PlazaPage />} />
         <Route path="/inspiration/:id" element={<DetailPage />} />

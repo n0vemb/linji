@@ -29,6 +29,7 @@ export interface MineStats {
   approved: number;
   pending: number;
   rejected: number;
+  draft: number;
 }
 
 export function selectMineStats(
@@ -41,6 +42,7 @@ export function selectMineStats(
     approved: mine.filter((i) => i.status === 'approved').length,
     pending: mine.filter((i) => i.status === 'pending').length,
     rejected: mine.filter((i) => i.status === 'rejected').length,
+    draft: mine.filter((i) => i.status === 'draft').length,
   };
 }
 

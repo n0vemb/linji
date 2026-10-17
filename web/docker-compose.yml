@@ -1,0 +1,18 @@
+# LinJi·灵集 单容器部署（海外 VPS）
+# 用法：JWT_SECRET=<随机长字符串> docker compose up -d --build
+services:
+  linji:
+    build: .
+    container_name: linji
+    ports:
+      - "8787:8787"
+    volumes:
+      # 数据持久化：SQLite 库 + 上传/采集的媒体都在这里
+      - ./server/data:/app/server/data
+    environment:
+      NODE_ENV: production
+      PORT: "8787"
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      # 海外服务器直连抖音/小红书/YouTube，无需代理（留空）
+      COLLECT_PROXY: ""
+    restart: unless-stopped

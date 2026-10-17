@@ -23,7 +23,11 @@ export const healthPath = (id: string): string => `/health/${id}`;
 /** 编辑灵感路径 builder */
 export const editPath = (id: string): string => `/edit/${id}`;
 
-/** 侧栏导航顺序（开发文档 §4 / 架构 §7.2） */
+/**
+ * 侧栏导航顺序（开发文档 §4 / 架构 §7.2）。
+ * 不含「灵感体检」：体检报告是挂在**单条灵感**上的对象，必须带 :id，
+ * 无法作为独立列表页从侧栏进入；其入口是详情页的「查看完整报告 →」。
+ */
 export interface NavEntry {
   label: string;
   path: string;
@@ -36,5 +40,4 @@ export const NAV_ITEMS: NavEntry[] = [
   { label: '我的灵感', path: PATHS.MINE },
   { label: '我的收藏', path: PATHS.FAVORITES },
   { label: '审核台', path: PATHS.AUDIT },
-  { label: '灵感体检', path: PATHS.HEALTH.replace('/:id', '') },
 ];
