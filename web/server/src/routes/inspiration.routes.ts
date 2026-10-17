@@ -240,8 +240,14 @@ export default async function inspirationRoutes(fastify: FastifyInstance) {
       if (!isOwner && !isAdmin) {
         throw forbidden('只有创建者或管理员可以删除该灵感');
       }
-      db.prepare('DELETE FROM favorites WHERE inspiration_id = ?').run(existing.id);
-      db.prepare('DELETE FROM inspirations WHERE id = ?').run(existing.id);
+      // 先删子表（外键指向 inspirations.id），再删主表，避免 FOREIGN KEY 约束失败。
+      // 顺序：audit_logs → favorites → inspirations。
+      const del = db.transaction((id: string) => {
+        db.prepare('DELETE FROM audit_logs WHERE inspiration_id = ?').run(id);
+        db.prepare('DELETE FROM favorites WHERE inspiration_id = ?').run(id);
+        db.prepare('DELETE FROM inspirations WHERE id = ?').run(id);
+      });
+      del(existing.id);
       return { ok: true };
     }
   );
