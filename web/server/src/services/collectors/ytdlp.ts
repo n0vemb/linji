@@ -5,7 +5,7 @@
  * （yt-dlp extractor 直接读页面内嵌 JSON）；抖音的 a_bogus 签名则由
  * Douyin_TikTok_Download_API sidecar 处理，不走这里。
  *
- * 依赖：系统安装 yt-dlp（Dockerfile 已装；本地 brew install yt-dlp）。
+ * 依赖：系统安装 yt-dlp + ffmpeg（Dockerfile 已装；本地 brew install yt-dlp ffmpeg）。
  * 未安装时返回 null，由调用方降级并如实告知。
  */
 import { execFile } from 'node:child_process';
@@ -137,8 +137,10 @@ export interface DownloadedMedia {
  * 用 curl 二次拉取极易失败（"视频文件未能转存"）。让 yt-dlp 自己把文件下下来最稳，
  * 且天然免登录、TikTok 拿到的即无水印原片。
  *
- * 格式选择 `b[acodec!=none]`：挑「自带音轨」的最佳渐进式格式，避免 ffmpeg 合并
- * （镜像里没装 ffmpeg）。YouTube / TikTok 均有此类渐进式流。
+ * 格式选择 `bestvideo+bestaudio`：YouTube / 多数平台只提供 DASH 分离流
+ * （视频、音频各自独立），必须靠 ffmpeg 合并成单文件（镜像已装 ffmpeg）。
+ * 优先挑 mp4(h264) + m4a(aac) 避免重编码；`--merge-output-format mp4`
+ * 兜底统一封装。720p 上限控制体积与转存耗时。
  */
 export async function ytDlpDownload(
   url: string,
@@ -152,7 +154,9 @@ export async function ytDlpDownload(
   const outTemplate = path.join(os.tmpdir(), `${safe}.%(ext)s`);
   const args = [
     '-f',
-    'b[acodec!=none]/best[acodec!=none]',
+    'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best',
+    '--merge-output-format',
+    'mp4',
     '-o',
     outTemplate,
     '--no-warnings',

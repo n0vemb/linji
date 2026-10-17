@@ -7,8 +7,10 @@
 # 未配置 sidecar 时自动走分享页/iteminfo 降级链。
 FROM node:22-slim
 
+# ffmpeg 必需：YouTube 等平台只提供 DASH 分离流（视频/音频独立），
+# 需 ffmpeg 合并为单文件；TikTok / Instagram 也借它拿到最佳画质。
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl python3 ca-certificates \
+  && apt-get install -y --no-install-recommends curl python3 ffmpeg ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 # yt-dlp 官方发布体（zipapp，需 python3）
