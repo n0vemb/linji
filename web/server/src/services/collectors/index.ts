@@ -14,6 +14,7 @@ import type { MediaType, Platform } from '../../../../src/data/types';
 import {
   PLATFORM_META,
   parseShareText,
+  detectRetiredPlatform,
   type ParsedShare,
 } from '../../../../src/utils/shareLink';
 import { fetchBinary, UA_MOBILE } from './http';
@@ -80,6 +81,15 @@ export async function collectFromShareText(
 ): Promise<CollectResponse> {
   const parsed = parseShareText(raw);
   if (!parsed) {
+    // 链接本身有效、但平台已下线：给准确原因，别让用户白检查文案格式
+    const retired = detectRetiredPlatform(raw);
+    if (retired) {
+      return {
+        ok: false,
+        reason: 'unsupported-platform',
+        message: `已识别为${retired}链接，但${retired}采集已于 2026-10 下线（其取流接口需登录态，长期不可用）。当前支持采集的来源：小红书、Instagram、YouTube。`,
+      };
+    }
     return {
       ok: false,
       reason: 'invalid-link',

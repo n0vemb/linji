@@ -5,6 +5,7 @@ import {
   extractContentId,
   extractTags,
   detectPlatform,
+  detectRetiredPlatform,
   normalizeUrl,
   cleanShareText,
   isShortLink,
@@ -83,6 +84,22 @@ describe('已下线平台：抖音 / TikTok 不再支持（2026-10 移除）', (
   it('detectPlatform 不再命中 douyin / tiktok', () => {
     expect(detectPlatform('https://www.douyin.com/video/1')).toBeNull();
     expect(detectPlatform('https://www.tiktok.com/@u/video/1')).toBeNull();
+  });
+
+  it('detectRetiredPlatform：链接有效但平台已下线，能单独识别出来', () => {
+    // 目的：提示「平台已下线」而不是「没识别出链接」，避免用户白检查文案格式
+    expect(
+      detectRetiredPlatform(
+        '7.85 复制打开抖音，看看【夏日穿搭分享】的作品 https://v.douyin.com/iRNBho6u/'
+      )
+    ).toBe('抖音');
+    expect(detectRetiredPlatform('https://www.douyin.com/video/123')).toBe('抖音');
+    expect(detectRetiredPlatform('https://www.tiktok.com/@u/video/123')).toBe(
+      'TikTok'
+    );
+    // 支持的平台不被误判为已下线
+    expect(detectRetiredPlatform('https://xhslink.com/a/abc')).toBeNull();
+    expect(detectRetiredPlatform('https://youtu.be/dQw4w9WgXcQ')).toBeNull();
   });
 });
 

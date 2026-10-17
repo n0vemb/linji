@@ -1,6 +1,7 @@
 import {
   parseShareText,
   PLATFORM_META,
+  detectRetiredPlatform,
   type CollectPlatform,
   type ParsedShare,
 } from '@/utils/shareLink';
@@ -67,6 +68,15 @@ export async function collectFromShareText(
 
   const parsed = parseShareText(shareText);
   if (!parsed) {
+    // 链接有效但平台已下线：给准确原因，别让用户白检查文案格式
+    const retired = detectRetiredPlatform(shareText);
+    if (retired) {
+      return {
+        ok: false,
+        reason: 'unsupported-platform',
+        message: `已识别为${retired}链接，但${retired}采集已于 2026-10 下线（其取流接口需登录态，长期不可用）。当前支持采集的来源：小红书、Instagram、YouTube。`,
+      };
+    }
     return {
       ok: false,
       reason: 'invalid-link',

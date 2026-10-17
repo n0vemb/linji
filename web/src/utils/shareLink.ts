@@ -49,6 +49,29 @@ export interface ParsedShare {
   raw: string;
 }
 
+/**
+ * 已下线但仍需识别的采集来源（2026-10 移除）。
+ *
+ * 存在意义：用户粘的确实是有效链接，只是该平台不再支持采集。
+ * 若只返回「没识别出链接」，用户会反复检查文案格式 —— 是错误引导。
+ * 因此单独识别并给出「平台已下线」的准确原因。
+ */
+const RETIRED_PLATFORM_HOSTS: { host: string; label: string }[] = [
+  { host: 'douyin.com', label: '抖音' },
+  { host: 'iesdouyin.com', label: '抖音' },
+  { host: 'tiktok.com', label: 'TikTok' },
+];
+
+/** 命中已下线平台则返回平台名，否则返回 null */
+export function detectRetiredPlatform(raw: string): string | null {
+  const text = (raw ?? '').toLowerCase();
+  for (const { host, label } of RETIRED_PLATFORM_HOSTS) {
+    // 命中域名即算（同时覆盖 v.douyin.com / www.douyin.com 等子域）
+    if (text.includes(host)) return label;
+  }
+  return null;
+}
+
 /** 平台元数据：域名、显示名 */
 export const PLATFORM_META: Record<
   CollectPlatform,
