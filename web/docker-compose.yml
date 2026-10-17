@@ -1,6 +1,17 @@
-# LinJi·灵集 单容器部署（海外 VPS）
+# LinJi·灵集 生产部署（海外 VPS / 宝塔 Docker 管理器）
 # 用法：JWT_SECRET=<随机长字符串> docker compose up -d --build
 services:
+  # 抖音 / TikTok 解析 sidecar（Douyin_TikTok_Download_API，20k+ star，Apache-2.0）
+  # 纯 Python 实现 X-Bogus/a_bogus 签名 + 游客身份，我们不做 HTTP 客户端之外的任何事。
+  # 说明：该服务对抖音网页 API 的风控策略可能随账号池变化，若解析失败可：
+  #   ① 保持现状（自动降级到分享页/iteminfo 通道，如实告知缺口）
+  #   ② 挂载自定义 config.yaml 提供 cookie（增强，非必须）
+  #   ③ 升级到 v5（douyin.wtf，无头浏览器维护游客身份池，需 PostgreSQL+Redis）
+  douyin-api:
+    image: evil0ctal/douyin_tiktok_download_api:V4.1.2
+    container_name: linji-douyin-api
+    restart: unless-stopped
+
   linji:
     build: .
     container_name: linji
@@ -15,4 +26,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       # 海外服务器直连抖音/小红书/YouTube，无需代理（留空）
       COLLECT_PROXY: ""
+      # 抖音/TikTok 解析走 sidecar（同一 compose 网络内按服务名访问）
+      DOUYIN_API_URL: "http://douyin-api:80"
+    depends_on:
+      - douyin-api
     restart: unless-stopped

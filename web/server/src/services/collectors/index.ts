@@ -1,6 +1,12 @@
 /**
  * 采集编排：分享文案解析 → 平台抓取 → 媒体转存 → 诚实的结果。
  *
+ * 平台通道分工：
+ * - YouTube / TikTok：官方 oEmbed（TikTok 配置 sidecar 时优先走 sidecar）
+ * - 抖音：Douyin_TikTok_Download_API sidecar（推荐）→ 分享页 SSR → iteminfo
+ * - 小红书：短链展开 + __INITIAL_STATE__ 解析（已验证完整可用）
+ * - Instagram：yt-dlp（公开内容免登录）
+ *
  * 铁律：**拿不到就说拿不到**。每个字段标注来源（share = 分享文案 /
  * platform = 平台接口），完整度只按真实拿到的数据算，
  * 缺口在 note 里明说。绝不编一段假文案假装采集成功。
@@ -15,9 +21,12 @@ import { fetchBinary, UA_MOBILE } from './http';
 import { fetchOEmbed } from './oembed';
 import { collectDouyin } from './douyin';
 import { collectXiaohongshu } from './xiaohongshu';
+import { collectInstagram } from './instagram';
+import { collectViaDouyinApi } from './douyinApi';
+import { downloadImage } from './download';
 import type { PlatformFindings } from './types';
-import { saveBuffer } from '../mediaStore';
-import { extFromMime } from '../mediaStore';
+import { saveBuffer, extFromMime } from '../mediaStore';
+import { config } from '../../env';
 
 /** 字段来源（ provenance，界面可展示「这条从哪来」） */
 export type FieldSource = 'share' | 'platform' | 'none';
@@ -69,29 +78,6 @@ function mapToTargetPlatform(source: ParsedShare['platform']): Platform {
   return source === 'douyin' || source === 'tiktok' ? 'douyin' : 'xiaohongshu';
 }
 
-const IMAGE_EXT_FALLBACK = 'jpg';
-
-function extFromUrl(url: string, contentType: string): string {
-  const fromMime = extFromMime(contentType.split(';')[0] ?? '');
-  if (fromMime) return fromMime;
-  const m = url.match(/\.(jpg|jpeg|png|webp|gif|avif)(?:\?|$)/i);
-  return m ? (m[1] === 'jpeg' ? 'jpg' : m[1].toLowerCase()) : IMAGE_EXT_FALLBACK;
-}
-
-/** 下载远程图片并转存；失败返回 null（由调用方降级） */
-async function downloadImage(url: string): Promise<string | null> {
-  const bin = await fetchBinary(url, { ua: UA_MOBILE, maxBytes: 20 * 1024 * 1024 });
-  if (!bin || bin.byteLength === 0) return null;
-  // 内容类型不是图片（拿到的是错误页 HTML 之类）→ 拒绝
-  if (bin.contentType && !bin.contentType.startsWith('image/')) return null;
-  const ext = extFromUrl(url, bin.contentType);
-  try {
-    return saveBuffer(Buffer.from(bin.buffer), ext, 'collected');
-  } catch {
-    return null;
-  }
-}
-
 export async function collectFromShareText(
   raw: string
 ): Promise<CollectResponse> {
@@ -106,6 +92,8 @@ export async function collectFromShareText(
   }
 
   const platformLabel = PLATFORM_META[parsed.platform].label;
+  // 提出局部常量：闭包（applyFindings）里 TS 不保留对 parsed 的收窄
+  const srcPlatform = parsed.platform;
 
   // ── 分享文案线索（一定真实存在，但可能不完整） ──
   let title = parsed.titleHint ?? '';
@@ -133,7 +121,7 @@ export async function collectFromShareText(
 
   // ── 按平台抓取 ──
   try {
-    if (parsed.platform === 'youtube' || parsed.platform === 'tiktok') {
+    if (parsed.platform === 'youtube') {
       const oembed = await fetchOEmbed(parsed.platform, parsed.url);
       if (oembed) {
         if (oembed.title) title = oembed.title;
@@ -145,13 +133,29 @@ export async function collectFromShareText(
       } else {
         limitation = `${platformLabel} oEmbed 未返回数据，已提取分享文案中的线索`;
       }
+    } else if (parsed.platform === 'tiktok') {
+      // 配置了 sidecar 优先走它（oEmbed 只有标题/作者/封面，sidecar 有全文+媒体）
+      if (config.douyinApiUrl) {
+        await applyFindings(await collectViaDouyinApi(parsed));
+      } else {
+        const oembed = await fetchOEmbed(parsed.platform, parsed.url);
+        if (oembed) {
+          if (oembed.title) title = oembed.title;
+          if (oembed.author) author = oembed.author;
+          if (oembed.thumbnail) {
+            const local = await downloadImage(oembed.thumbnail);
+            if (local) coverImage = local;
+          }
+        } else {
+          limitation = `${platformLabel} oEmbed 未返回数据，已提取分享文案中的线索`;
+        }
+      }
     } else if (parsed.platform === 'douyin') {
       await applyFindings(await collectDouyin(parsed));
     } else if (parsed.platform === 'xiaohongshu') {
       await applyFindings(await collectXiaohongshu(parsed));
     } else if (parsed.platform === 'instagram') {
-      limitation =
-        'Instagram 官方接口需要 access token（当前未配置），且页面有登录墙；已提取分享文案中的线索';
+      await applyFindings(await collectInstagram(parsed));
     }
   } catch (err) {
     limitation = `抓取过程出错（${(err as Error).message}），已提取分享文案中的线索`;
@@ -167,6 +171,9 @@ export async function collectFromShareText(
     }
     if (f.mediaType) mediaType = f.mediaType;
 
+    // 采集器已自行转存的封面
+    if (f.coverLocalUrl) coverImage = f.coverLocalUrl;
+
     if (f.images && f.images.length > 0) {
       // 并发转存（限制并发 4，避免把平台 CDN 打急）
       const locals: string[] = [];
@@ -181,14 +188,20 @@ export async function collectFromShareText(
       });
       await Promise.all(workers);
       images = locals;
-      if (images.length > 0) coverImage = images[0];
+      if (images.length > 0 && !coverImage) coverImage = images[0];
     }
 
     if (f.videoUrl) {
       videoUrl = f.videoUrl; // 视频地址先记下，转存失败则置空并说明
       const bin = await fetchBinary(f.videoUrl, {
         ua: UA_MOBILE,
-        referer: 'https://www.douyin.com/',
+        // 按平台带 Referer（抖音 CDN 校验；Instagram 的 scontent 一般不需要）
+        referer:
+          srcPlatform === 'douyin'
+            ? 'https://www.douyin.com/'
+            : srcPlatform === 'instagram'
+              ? 'https://www.instagram.com/'
+              : undefined,
         maxBytes: 200 * 1024 * 1024,
       });
       if (bin && bin.byteLength > 0 && bin.contentType.startsWith('video/')) {

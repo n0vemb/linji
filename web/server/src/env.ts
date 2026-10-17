@@ -42,6 +42,17 @@ export const config = {
    */
   collectProxy: str('COLLECT_PROXY', ''),
 
+  /**
+   * Douyin_TikTok_Download_API sidecar 地址（可选）。
+   * 设置后抖音 / TikTok 解析走该服务（纯 Python 实现 X-Bogus/a_bogus 签名，
+   * 见 docker-compose.yml 的 douyin-api service）。未设置则走
+   * 分享页 / iteminfo 降级链（拿不到就如实告知）。
+   */
+  douyinApiUrl: str('DOUYIN_API_URL', ''),
+
+  /** yt-dlp 可执行文件路径（Instagram / TikTok 元数据，Dockerfile 已装） */
+  ytDlpPath: str('YTDLP_PATH', 'yt-dlp'),
+
   /** 上传体积上限（字节） */
   maxImageBytes: int('MAX_IMAGE_BYTES', 15 * 1024 * 1024),
   maxVideoBytes: int('MAX_VIDEO_BYTES', 200 * 1024 * 1024),

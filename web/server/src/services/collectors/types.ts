@@ -18,6 +18,10 @@ export interface PlatformFindings {
   mediaType?: MediaType;
   /** 短链展开后的最终 URL（内容 ID 已更新时同步） */
   finalUrl?: string;
+  /** 封面图远程 URL（编排层下载转存） */
+  coverRemoteUrl?: string;
+  /** 封面图本地 URL（采集器已自行下载转存时） */
+  coverLocalUrl?: string;
   /** 这次抓取实际拿到了什么（生成给用户的 note 用） */
   fetched: string[];
   /** 受限 / 失败原因（如实告知，不伪造） */

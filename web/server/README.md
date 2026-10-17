@@ -55,12 +55,22 @@ JWT_SECRET=<随机长字符串> docker compose up -d --build
 
 ## 采集能力边界（实测，2026-10）
 
-| 平台 | 能力 | 说明 |
+| 平台 | 能力 | 实现方式 |
 |---|---|---|
-| YouTube / TikTok | ✅ 完整 | 官方 oEmbed：标题 + 作者 + 封面（封面转存） |
-| 小红书 | ✅ 完整 | 短链展开（xsec_token 在跳转 URL 上）→ `__INITIAL_STATE__` 解析：正文 + 话题 + 图片直链（全部转存） |
-| 抖音 | ⚠️ 部分 | 短链展开拿真实 itemId；详情接口（iteminfo）对无签名请求返回空 200 → 只提取分享文案线索，正文/媒体需签名接口 |
-| Instagram | ⚠️ 仅文案 | 官方接口需 access token；如实降级 |
+| Instagram | ✅ **完整**（实测：标题/作者/正文/话题/封面/**视频**全部转存） | yt-dlp extractor，公开内容免登录 |
+| 小红书 | ✅ **完整**（实测：正文/话题/9 图转存） | 短链展开 + `__INITIAL_STATE__` 解析 |
+| YouTube | ✅ 标题/作者/封面 | 官方 oEmbed |
+| TikTok | ✅ 配置 sidecar 后完整；否则 oEmbed 标题/作者/封面 | sidecar / oEmbed |
+| 抖音 | ⚠️ **配置 sidecar 后完整**（推荐）；未配置时仅 itemId + 分享文案线索 | sidecar（X-Bogus/a_bogus 签名）→ 分享页 SSR → iteminfo |
+
+### 抖音的三条通道（按优先级）
+
+1. **Douyin_TikTok_Download_API sidecar**（推荐，`DOUYIN_API_URL` 配置时启用）
+   —— 上游项目（20k+ star，Apache-2.0）纯 Python 实现 X-Bogus/a_bogus 签名，
+   签名的风控演进成本由上游承担。compose 已内置 `douyin-api` service。
+2. **分享页 SSR**（无 cookie 无签名，`_ROUTER_DATA` 的 videoInfoRes）
+   —— 实测部分网络/UA 下服务端不吐数据（videoInfoRes=null），作为零依赖尝试保留。
+3. **iteminfo 接口** —— 实测对无签名请求返回空 200（风控），兼容保留。
 
 **铁律：拿不到就说拿不到。** 结果带 `completeness`（full/partial）与 `note`（缺口说明），
 每个字段标注来源（`fieldSources`：share=分享文案 / platform=平台接口）。绝不伪造内容。
@@ -70,6 +80,10 @@ JWT_SECRET=<随机长字符串> docker compose up -d --build
 - **传输用系统 curl 而非 Node fetch**：抖音/小红书短链的 JS 风控按 TLS 指纹分流，
   undici（Node fetch 底层）100% 拿到挑战页，curl 稳定 302。curl 缺失时自动降级 undici
   （YouTube/TikTok 仍可用，国内平台会明示失败）。
+- **Instagram 用 yt-dlp**（Dockerfile 已装）：公开 reel/帖子免登录，直接读页面内嵌 JSON；
+  视频 / 封面转存到本地。私密内容才需 cookies——我们只采公开内容。
+- **抖音签名不手搓**：X-Bogus/a_bogus 交给 Douyin_TikTok_Download_API sidecar
+  （`DOUYIN_API_URL`，compose 内置）；未配置时走分享页/iteminfo 降级链。
 - **代理按域名分流**：`COLLECT_PROXY` 只作用于海外域名；国内平台（抖音/小红书）恒直连
   （实测本机代理对国内域名 connection failed，海外服务器直连一切）。
 - **体检报告服务端现算**：复用前端同一套 `src/data/health/` 评分器，不信任客户端分数。
