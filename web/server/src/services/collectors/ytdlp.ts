@@ -1,9 +1,9 @@
 /**
- * yt-dlp 封装（Instagram / TikTok 元数据与媒体）。
+ * yt-dlp 封装（YouTube / Instagram / 小红书 元数据与媒体）。
  *
  * 为什么用 yt-dlp：Instagram 公开 reel / 帖子无需登录即可解析
- * （yt-dlp extractor 直接读页面内嵌 JSON）；抖音的 a_bogus 签名则由
- * Douyin_TikTok_Download_API sidecar 处理，不走这里。
+ * （yt-dlp extractor 直接读页面内嵌 JSON）；YouTube 的 DASH 分离流由
+ * 本模块的 ytDlpDownload 借 ffmpeg 合并；小红书 SSR 直链失效时也走这里兜底。
  *
  * 依赖：系统安装 yt-dlp + ffmpeg（Dockerfile 已装；本地 brew install yt-dlp ffmpeg）。
  * 未安装时返回 null，由调用方降级并如实告知。
@@ -26,7 +26,7 @@ async function hasYtDlp(): Promise<boolean> {
     ytDlpUsable = true;
   } catch {
     ytDlpUsable = false;
-    console.warn('[collect] 系统缺少 yt-dlp，Instagram/TikTok 抓取将不可用');
+    console.warn('[collect] 系统缺少 yt-dlp，YouTube/Instagram/小红书 抓取将不可用');
   }
   return ytDlpUsable;
 }
@@ -133,9 +133,9 @@ export interface DownloadedMedia {
 /**
  * 直接下载视频文件（而非只取直链）。
  *
- * 为什么不直接用直链 fetch：YouTube / TikTok 的直链带签名、常要求特定 UA / Range，
+ * 为什么不直接用直链 fetch：YouTube / 小红书的直链带签名、常要求特定 UA / Range，
  * 用 curl 二次拉取极易失败（"视频文件未能转存"）。让 yt-dlp 自己把文件下下来最稳，
- * 且天然免登录、TikTok 拿到的即无水印原片。
+ * 且天然免登录。
  *
  * 格式选择 `bestvideo+bestaudio`：YouTube / 多数平台只提供 DASH 分离流
  * （视频、音频各自独立），必须靠 ffmpeg 合并成单文件（镜像已装 ffmpeg）。

@@ -13,28 +13,13 @@ import {
 /**
  * 分享链接解析测试。
  * 用线上真实的分享文案格式（不是理想化的纯 URL），因为这正是用户的核心痛点：
- * 「抖音和小红书分享链接格式非纯网址」。
+ * 「小红书分享链接格式非纯网址」。
+ *
+ * 采集来源（2026-10 起）：小红书 / Instagram / YouTube。
+ * 抖音 / TikTok 已下线，其链接应识别为「不支持」而非解析成功。
  */
 
 describe('真实分享文案解析（核心场景）', () => {
-  it('抖音：引导语 + 短链 + 尾部引导语，链接非纯网址', () => {
-    const text =
-      '7.85 复制打开抖音，看看【夏日穿搭分享】的作品 夏日清凉穿搭 #穿搭 #显高 https://v.douyin.com/iRNBho6u/ 复制此链接，打开Dou音搜索，直接观看视频！';
-    const r = parseShareText(text);
-    expect(r).not.toBeNull();
-    expect(r!.platform).toBe('douyin');
-    expect(r!.url).toBe('https://v.douyin.com/iRNBho6u/');
-    expect(r!.contentId).toBe('iRNBho6u');
-    expect(r!.isShortLink).toBe(true);
-    expect(r!.tagHints).toEqual(['#穿搭', '#显高']);
-  });
-
-  it('抖音：提取「XXX的作品」中的作者名', () => {
-    const text = '看看【小鹿的作品】的内容 #美食 https://v.douyin.com/abc123/';
-    const r = parseShareText(text)!;
-    expect(r.authorHint).toBe('小鹿');
-  });
-
   it('小红书：【标题 - 作者 | 小红书】格式，标题作者都能提取', () => {
     const text =
       '31 【小个子显高穿搭 - 小鹿 | 小红书 - 你的生活指南】😆 xhslink.com/a/AbCdEf123 复制本条信息，打开【小红书】App查看精彩内容！';
@@ -50,15 +35,6 @@ describe('真实分享文案解析（核心场景）', () => {
     const r = parseShareText('看这个 xhslink.com/a/XyZ789 复制打开小红书')!;
     expect(r.url).toBe('https://xhslink.com/a/XyZ789');
     expect(r.platform).toBe('xiaohongshu');
-  });
-
-  it('TikTok：标准长链，提取 video ID', () => {
-    const text =
-      'Check out this video: https://www.tiktok.com/@creator/video/7123456789012345678';
-    const r = parseShareText(text)!;
-    expect(r.platform).toBe('tiktok');
-    expect(r.contentId).toBe('7123456789012345678');
-    expect(r.isShortLink).toBe(false);
   });
 
   it('Instagram：reel 链接提取短码', () => {
@@ -85,6 +61,31 @@ describe('真实分享文案解析（核心场景）', () => {
   });
 });
 
+describe('已下线平台：抖音 / TikTok 不再支持（2026-10 移除）', () => {
+  it('抖音短链 → 识别不出平台，返回 null（而不是误判成别的平台）', () => {
+    const text =
+      '7.85 复制打开抖音，看看【夏日穿搭分享】的作品 #穿搭 https://v.douyin.com/iRNBho6u/ 复制此链接，打开Dou音搜索，直接观看视频！';
+    expect(parseShareText(text)).toBeNull();
+  });
+
+  it('抖音长链 → 返回 null', () => {
+    expect(
+      parseShareText('https://www.douyin.com/video/7298145681699622182')
+    ).toBeNull();
+  });
+
+  it('TikTok 链接 → 返回 null', () => {
+    expect(
+      parseShareText('https://www.tiktok.com/@creator/video/7123456789012345678')
+    ).toBeNull();
+  });
+
+  it('detectPlatform 不再命中 douyin / tiktok', () => {
+    expect(detectPlatform('https://www.douyin.com/video/1')).toBeNull();
+    expect(detectPlatform('https://www.tiktok.com/@u/video/1')).toBeNull();
+  });
+});
+
 describe('健壮性：脏输入不能崩', () => {
   it('空字符串 / 纯空格 / null → 返回 null', () => {
     expect(parseShareText('')).toBeNull();
@@ -100,13 +101,13 @@ describe('健壮性：脏输入不能崩', () => {
   });
 
   it('URL 尾部粘连中文引导语，正确剥离', () => {
-    const r = parseShareText('看这里 https://v.douyin.com/xyz123复制此链接')!;
-    expect(r.url).toBe('https://v.douyin.com/xyz123');
+    const r = parseShareText('看这里 https://xhslink.com/a/xyz123复制此链接')!;
+    expect(r.url).toBe('https://xhslink.com/a/xyz123');
   });
 
   it('URL 尾部标点（句号/逗号）正确剥离', () => {
-    const r = parseShareText('见 https://www.tiktok.com/@u/video/123.')!;
-    expect(r.contentId).toBe('123');
+    const r = parseShareText('见 https://www.instagram.com/reel/AbCdEf.')!;
+    expect(r.contentId).toBe('AbCdEf');
   });
 
   it('含表情 / 零宽字符 / 全角空格不破坏解析', () => {
@@ -120,9 +121,9 @@ describe('健壮性：脏输入不能崩', () => {
 
   it('一条文案里多个链接，优先取可识别平台的', () => {
     const text =
-      '参考这个 https://www.weibo.com/x/1 还有这个 https://v.douyin.com/abc/';
+      '参考这个 https://www.weibo.com/x/1 还有这个 https://xhslink.com/a/abc/';
     const r = parseShareText(text)!;
-    expect(r.platform).toBe('douyin');
+    expect(r.platform).toBe('xiaohongshu');
   });
 });
 
@@ -163,15 +164,13 @@ describe('⭐ 真实分享样本（用户提供，2026-10）—— 最高优先�
     expect(r.titleHint).not.toContain('面包师');
   });
 
-  it('抖音：看看【作者的作品】+ 截断话题 #... + 尾部时间戳噪声', () => {
+  it('平台截断话题「#...」不是真话题，必须被过滤（不回填到表单）', () => {
     const text =
-      '0.00 复制打开抖音，看看【飞翔的喵星人的作品】中雨+夜间 无剪辑OpenPilot辅助效果实录#... https://v.douyin.com/SoOXb6aP3c0/ :2pm 08/01 r@E.hb yTL:/';
+      '0.00 分享一篇笔记 中雨+夜间 无剪辑效果实录#... https://xhslink.com/a/SoOXb6aP3c0/ :2pm 08/01';
     const r = parseShareText(text)!;
-    expect(r.platform).toBe('douyin');
-    expect(r.url).toBe('https://v.douyin.com/SoOXb6aP3c0/');
+    expect(r.platform).toBe('xiaohongshu');
+    expect(r.url).toBe('https://xhslink.com/a/SoOXb6aP3c0/');
     expect(r.contentId).toBe('SoOXb6aP3c0');
-    expect(r.authorHint).toBe('飞翔的喵星人');
-    // 「#...」是平台截断符，不是真话题，必须被过滤
     expect(r.tagHints).toEqual([]);
   });
 
@@ -199,19 +198,10 @@ describe('⭐ 真实分享样本（用户提供，2026-10）—— 最高优先�
 });
 
 describe('extractContentId 各平台 ID 提取', () => {
-  it('抖音长链 /video/{id}', () => {
+  it('小红书短链只能拿到短码（需服务端展开）', () => {
     expect(
-      extractContentId(
-        'https://www.douyin.com/video/7298145681699622182',
-        'douyin'
-      )
-    ).toBe('7298145681699622182');
-  });
-
-  it('抖音短链只能拿到短码（需服务端展开）', () => {
-    expect(extractContentId('https://v.douyin.com/iRNBho6u/', 'douyin')).toBe(
-      'iRNBho6u'
-    );
+      extractContentId('https://xhslink.com/a/iRNBho6u/', 'xiaohongshu')
+    ).toBe('iRNBho6u');
   });
 
   it('小红书 explore / discovery 两种路径', () => {
@@ -226,10 +216,16 @@ describe('extractContentId 各平台 ID 提取', () => {
     ).toBe('xyz789');
   });
 
-  it('TikTok /@user 形式回退取用户名', () => {
-    expect(extractContentId('https://www.tiktok.com/@creator', 'tiktok')).toBe(
-      'creator'
-    );
+  it('YouTube watch?v= / shorts / embed 都能取到 ID', () => {
+    expect(
+      extractContentId('https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'youtube')
+    ).toBe('dQw4w9WgXcQ');
+    expect(
+      extractContentId('https://www.youtube.com/shorts/abc123', 'youtube')
+    ).toBe('abc123');
+    expect(
+      extractContentId('https://www.youtube.com/embed/xyz789', 'youtube')
+    ).toBe('xyz789');
   });
 
   it('Instagram 非内容路径返回空串', () => {
@@ -257,20 +253,24 @@ describe('底层工具函数', () => {
   });
 
   it('detectPlatform：子域名也算命中', () => {
-    expect(detectPlatform('https://www.douyin.com/video/1')).toBe('douyin');
+    expect(detectPlatform('https://www.xiaohongshu.com/explore/x')).toBe(
+      'xiaohongshu'
+    );
     expect(detectPlatform('https://www.instagram.com/p/x')).toBe('instagram');
-    expect(detectPlatform('https://evil-douyin.com/x')).toBeNull();
+    expect(detectPlatform('https://evil-xiaohongshu.com/x')).toBeNull();
   });
 
   it('isShortLink：区分短链与长链', () => {
-    expect(isShortLink('https://v.douyin.com/abc/', 'douyin')).toBe(true);
-    expect(isShortLink('https://www.douyin.com/video/7123', 'douyin')).toBe(false);
+    expect(isShortLink('https://xhslink.com/a/abc/', 'xiaohongshu')).toBe(true);
+    expect(
+      isShortLink('https://www.xiaohongshu.com/explore/7123', 'xiaohongshu')
+    ).toBe(false);
   });
 
   it('extractUrl 只取第一个可识别平台的链接', () => {
     const r = extractUrl(
-      'foo https://weibo.com/a 和 https://www.tiktok.com/@u/video/9'
+      'foo https://weibo.com/a 和 https://www.instagram.com/reel/AbC'
     );
-    expect(r!.platform).toBe('tiktok');
+    expect(r!.platform).toBe('instagram');
   });
 });

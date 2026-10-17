@@ -19,9 +19,9 @@ module.exports = {
         JWT_SECRET: 'change-me-in-production',
         // 海外服务器直连平台，留空；被墙网络调试才需要代理
         COLLECT_PROXY: '',
-        // 抖音/TikTok 解析 sidecar（Douyin_TikTok_Download_API）
-        // 未部署 sidecar 就留空，会自动走分享页/iteminfo 降级链
-        DOUYIN_API_URL: 'http://127.0.0.1:80',
+        // 采集依赖 yt-dlp（+ ffmpeg），需已安装并可从 PATH 解析；
+        // 未安装时小红书/YouTube/Instagram 采集会降级并如实告知缺口。
+        YTDLP_PATH: 'yt-dlp',
       },
       // 日志
       error_file: '/www/wwwroot/linji/web/server/data/logs/error.log',

@@ -4,19 +4,19 @@
  * ════════════════════════════════════════════════════════════════
  * 为什么用 curl 子进程而不是 Node 内置 fetch（实测结论，2026-10）：
  * ════════════════════════════════════════════════════════════════
- * 抖音 / 小红书的短链服务带 JS 风控挑战（抖音 argus、小红书 formula-runtime），
+ * 小红书的短链服务带 JS 风控挑战（formula-runtime），
  * 按客户端 TLS 指纹分流：undici（Node fetch 底层）请求 100% 拿到挑战页，
  * curl 3/3 稳定拿到 302 跳转。浏览器指纹差异无法在 Node 层消除，
- * 因此国内平台抓取走系统 curl；YouTube / TikTok 的 oEmbed 无此限制，
+ * 因此小红书抓取走系统 curl；YouTube / Instagram 无此限制，
  * 但统一走 curl 行为更一致（curl 同样支持 -x 代理）。
  *
  * 代理策略（本地调试实测）：
  * 本机代理（10808）只覆盖海外域名，对国内域名直接 connection failed；
- * 生产服务器在海外直连一切。因此按域名分流：国内平台直连，
- * 海外平台（YouTube/TikTok/Instagram）才走 COLLECT_PROXY。
+ * 生产服务器在海外直连一切。因此按域名分流：小红书直连，
+ * 海外平台（YouTube/Instagram）才走 COLLECT_PROXY。
  *
- * curl 不可用时（极少数精简镜像）降级 undici：YouTube/TikTok 仍可用，
- * 抖音/小红书会明示「抓取通道不可用」而不是假装成功。
+ * curl 不可用时（极少数精简镜像）降级 undici：YouTube/Instagram 仍可用，
+ * 小红书会明示「抓取通道不可用」而不是假装成功。
  */
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
@@ -30,8 +30,6 @@ const execFileAsync = promisify(execFile);
 
 /** 国内平台域名：直连，不走代理 */
 const DOMESTIC_HOSTS = [
-  'douyin.com',
-  'iesdouyin.com',
   'xhslink.com',
   'xhslink.cn',
   'xiaohongshu.com',
@@ -210,7 +208,7 @@ function safeUnlink(p: string): void {
   }
 }
 
-// ── undici 降级通道（curl 缺失时；YouTube/TikTok 可用，国内平台会失败） ──
+// ── undici 降级通道（curl 缺失时；YouTube/Instagram 可用，小红书会被风控拦截） ──
 let proxyAgent: ProxyAgent | null = null;
 
 function undiciAgentFor(url: string): ProxyAgent | undefined {
@@ -359,7 +357,7 @@ async function undiciFetchFollow(
   };
 }
 
-/** GET JSON（oEmbed 用） */
+/** GET JSON（平台 JSON 接口用；curl 优先，缺失时降级 undici） */
 export async function fetchJson<T>(
   url: string,
   opts: { ua?: string; referer?: string; timeoutMs?: number } = {}

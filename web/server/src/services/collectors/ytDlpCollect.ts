@@ -1,13 +1,11 @@
 /**
- * yt-dlp 通用采集通道（YouTube / 抖音 / TikTok 的兜底或主通道）。
+ * yt-dlp 通用采集通道（YouTube 主通道；小红书签名直链失效时的兜底）。
  *
  * 为什么用 yt-dlp：公开内容无需登录即可解析（多个开源项目验证），
- * 与产品「不手搓签名、不依赖 cookie」的取向一致；TikTok 经 yt-dlp 拿到的
- * 即是**无水印**原片。抖音经 yt-dlp 可能带水印，故仅作为 sidecar 全失败后的兜底，
- * 不覆盖 sidecar 的「无水印」优先通道。
+ * 与产品「不手搓签名、不依赖 cookie」的取向一致。
  *
- * 依赖：系统安装 yt-dlp（Dockerfile 已装）。未安装时返回带 limitation 的空 findings，
- * 由编排层继续走别的通道或如实降级。
+ * 依赖：系统安装 yt-dlp + ffmpeg（Dockerfile 已装）。
+ * 未安装时返回带 limitation 的空 findings，由编排层继续走别的通道或如实降级。
  */
 import type { ParsedShare } from '../../../../src/utils/shareLink';
 import { extractTags } from '../../../../src/utils/shareLink';
@@ -19,7 +17,7 @@ import type { PlatformFindings } from './types';
 
 /**
  * 用 yt-dlp 拉取帖子的元数据 + 直链媒体，写入 PlatformFindings。
- * 适用于 YouTube / 抖音 / TikTok（Instagram 有独立的 instagram.ts，逻辑类似）。
+ * 适用于 YouTube / 小红书（Instagram 有独立的 instagram.ts，逻辑类似）。
  */
 export async function collectViaYtDlp(
   parsed: ParsedShare
@@ -45,8 +43,8 @@ export async function collectViaYtDlp(
   }
   if (meta.uploader) findings.author = meta.uploader;
 
-  // 视频：让 yt-dlp 直接把文件下下来转存（避免签名直链二次 fetch 失败；
-  // TikTok 经此拿到的是无水印原片）。失败再退回远程直链让编排层尝试。
+  // 视频：让 yt-dlp 直接把文件下下来转存，避免签名直链二次 fetch 失败。
+  // 失败再退回远程直链让编排层尝试。
   if (meta.videoUrl) {
     findings.mediaType = 'video';
     const dl = await ytDlpDownload(parsed.url, config.collectProxy || undefined);

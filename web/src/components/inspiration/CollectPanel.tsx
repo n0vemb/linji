@@ -31,10 +31,13 @@ interface CollectPanelProps {
  * 网络采集面板 —— 粘贴分享文案，自动预填灵感内容。
  *
  * 设计取舍（重要，不是实现偷懒）：
- * 抖音 / 小红书的分享文案本身就是链接载体，短链 + 标题 + #话题能可靠解析出来，
- * 这部分**真实可用**。但它们的正文与图片列表是 JS 运行时渲染 / 需签名接口，
+ * 小红书的分享文案本身就是链接载体，短链 + 标题 + #话题能可靠解析出来，
+ * 这部分**真实可用**。但正文与图片列表是 JS 运行时渲染 / 需签名接口，
  * 纯前端拿不到 —— 所以这里如实展示「已提取 / 需补全」的边界，
- * 而不是编造内容假装采集成功。视频转存需要后端（初版 Deferred）。
+ * 而不是编造内容假装采集成功。视频转存由后端完成（yt-dlp + ffmpeg）。
+ *
+ * 采集来源（2026-10 起）：小红书 / Instagram / YouTube。
+ * 抖音 / TikTok 已下线 —— 其取流接口需登录态 cookie，长期 403。
  */
 export default function CollectPanel({ onFilled }: CollectPanelProps) {
   const [open, setOpen] = useState(false);
@@ -156,7 +159,7 @@ export default function CollectPanel({ onFilled }: CollectPanelProps) {
           </Box>
 
           <Typography sx={{ fontSize: 11, color: COLORS.sub3, mb: 1.25, lineHeight: 1.6 }}>
-            粘贴平台「分享」得到的<strong>整段文案</strong>（含链接）。抖音 / 小红书的分享文案不是纯网址，直接粘链接会识别失败。
+            粘贴平台「分享」得到的<strong>整段文案</strong>（含链接）。小红书的分享文案不是纯网址，直接粘链接会识别失败。
           </Typography>
 
           <TextField
@@ -166,7 +169,7 @@ export default function CollectPanel({ onFilled }: CollectPanelProps) {
             size="small"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={'7.85 复制打开抖音，看看【夏日穿搭分享】的作品 #穿搭 https://v.douyin.com/xxx/'}
+            placeholder={'31 【小个子显高穿搭 - 小鹿 | 小红书 - 你的生活指南】 xhslink.com/a/xxxxx 复制本条信息，打开【小红书】App查看精彩内容！'}
             inputProps={{ style: { fontSize: 12, lineHeight: 1.6 } }}
             sx={{ mb: 1.25 }}
           />

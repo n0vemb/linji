@@ -6,7 +6,7 @@ export interface PlatformFindings {
   title?: string;
   /** 作者 */
   author?: string;
-  /** 正文（抖音 desc / 小红书 note.desc） */
+  /** 正文（小红书 note.desc / Instagram 与 YouTube 的 description） */
   copy?: string;
   /** 从正文里识别的话题 */
   tags?: string[];

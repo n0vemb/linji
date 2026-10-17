@@ -42,7 +42,7 @@ JWT_SECRET=<随机长字符串> docker compose up -d --build
 | GET | /inspirations/:id | ✅ | 详情（本人任意态 / 他人仅已通过） |
 | POST | /inspirations | ✅ | 新建（asDraft 控制草稿/待审） |
 | PUT | /inspirations/:id | ✅ | 编辑（仅创建者；已审内容被打回待审） |
-| DELETE | /inspirations/:id | ✅ | 删除（仅创建者） |
+| DELETE | /inspirations/:id | ✅ | 删除（创建者或管理员；级联清理 audit_logs / favorites） |
 | POST | /inspirations/:id/submit | ✅ | 草稿提交审核 |
 | POST | /inspirations/:id/favorite | ✅ | 收藏 / 取消（切换） |
 | GET | /favorites | ✅ | 我的收藏 |
@@ -55,36 +55,33 @@ JWT_SECRET=<随机长字符串> docker compose up -d --build
 
 ## 采集能力边界（实测，2026-10）
 
+**采集来源（2026-10 起）：小红书 / Instagram / YouTube。**
+
 | 平台 | 能力 | 实现方式 |
 |---|---|---|
+| 小红书 | ✅ **完整**（实测：正文/话题/多图转存；视频笔记可拉原片） | 短链展开 + `__INITIAL_STATE__` 解析；视频签名直链失效时由 yt-dlp 兜底下载 |
 | Instagram | ✅ **完整**（实测：标题/作者/正文/话题/封面/**视频**全部转存） | yt-dlp extractor，公开内容免登录 |
-| 小红书 | ✅ **完整**（实测：正文/话题/9 图转存） | 短链展开 + `__INITIAL_STATE__` 解析 |
-| YouTube | ✅ 标题/作者/封面 | 官方 oEmbed |
-| TikTok | ✅ 配置 sidecar 后完整；否则 oEmbed 标题/作者/封面 | sidecar / oEmbed |
-| 抖音 | ⚠️ **配置 sidecar 后完整**（推荐）；未配置时仅 itemId + 分享文案线索 | sidecar（X-Bogus/a_bogus 签名）→ 分享页 SSR → iteminfo |
+| YouTube | ✅ **含视频**（实测：h264+aac 720p 转存） | yt-dlp 拉元数据 + 下载；DASH 分离流由 ffmpeg 合并 |
 
-### 抖音的三条通道（按优先级）
-
-1. **Douyin_TikTok_Download_API sidecar**（推荐，`DOUYIN_API_URL` 配置时启用）
-   —— 上游项目（20k+ star，Apache-2.0）纯 Python 实现 X-Bogus/a_bogus 签名，
-   签名的风控演进成本由上游承担。compose 已内置 `douyin-api` service。
-2. **分享页 SSR**（无 cookie 无签名，`_ROUTER_DATA` 的 videoInfoRes）
-   —— 实测部分网络/UA 下服务端不吐数据（videoInfoRes=null），作为零依赖尝试保留。
-3. **iteminfo 接口** —— 实测对无签名请求返回空 200（风控），兼容保留。
+**已下线：抖音 / TikTok**（2026-10 移除）。原因：其取流接口需登录态 cookie，
+原 sidecar（Douyin_TikTok_Download_API V4.1.2）无 cookie 配置位、长期返回 403，
+继续保留只会给出「采集失败」的假希望。`douyin-api` service 与 `DOUYIN_API_URL`
+已从所有 compose / Dockerfile / env 中移除。
 
 **铁律：拿不到就说拿不到。** 结果带 `completeness`（full/partial）与 `note`（缺口说明），
 每个字段标注来源（`fieldSources`：share=分享文案 / platform=平台接口）。绝不伪造内容。
 
 ## 已知实现说明
 
-- **传输用系统 curl 而非 Node fetch**：抖音/小红书短链的 JS 风控按 TLS 指纹分流，
+- **传输用系统 curl 而非 Node fetch**：小红书短链的 JS 风控按 TLS 指纹分流，
   undici（Node fetch 底层）100% 拿到挑战页，curl 稳定 302。curl 缺失时自动降级 undici
-  （YouTube/TikTok 仍可用，国内平台会明示失败）。
-- **Instagram 用 yt-dlp**（Dockerfile 已装）：公开 reel/帖子免登录，直接读页面内嵌 JSON；
-  视频 / 封面转存到本地。私密内容才需 cookies——我们只采公开内容。
-- **抖音签名不手搓**：X-Bogus/a_bogus 交给 Douyin_TikTok_Download_API sidecar
-  （`DOUYIN_API_URL`，compose 内置）；未配置时走分享页/iteminfo 降级链。
-- **代理按域名分流**：`COLLECT_PROXY` 只作用于海外域名；国内平台（抖音/小红书）恒直连
+  （YouTube/Instagram 仍可用，小红书会明示失败）。
+- **yt-dlp + ffmpeg（Dockerfile 已装）** 是采集主力：Instagram / YouTube 直接走它，
+  小红书视频在 SSR 签名直链失效时由它兜底下载。
+  - ffmpeg 必需：YouTube 只提供 DASH 分离流（视频/音频独立），必须合并。
+  - 格式选择优先 h264（`vcodec^=avc1`）+ 720p 上限，兼顾兼容与体积。
+  - 只采公开内容，私密内容需 cookies——我们不做登录态采集。
+- **代理按域名分流**：`COLLECT_PROXY` 只作用于海外域名；小红书恒直连
   （实测本机代理对国内域名 connection failed，海外服务器直连一切）。
 - **体检报告服务端现算**：复用前端同一套 `src/data/health/` 评分器，不信任客户端分数。
 - **编辑已审内容 → 回待审**：审核结论是对「那一版内容」的，内容变了结论就失效。

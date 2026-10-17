@@ -57,16 +57,16 @@ export type CollectResponse =
   | CollectFailure;
 
 /** 把来源平台映射到本平台的目标发布平台 */
-export function mapToTargetPlatform(source: CollectPlatform): Platform {
-  // 抖音 / TikTok → 抖音；小红书 / Instagram / YouTube → 小红书
-  return source === 'douyin' || source === 'tiktok' ? 'douyin' : 'xiaohongshu';
+export function mapToTargetPlatform(_source: CollectPlatform): Platform {
+  // 采集来源（小红书 / Instagram / YouTube）统一映射到「小红书」发布平台。
+  // 抖音 / TikTok 采集已于 2026-10 下线（取流需 cookie，长期 403），
+  // 因此不再有映射到「抖音」发布平台的来源。
+  return 'xiaohongshu';
 }
 
-/** 支持的平台（面板展示用） */
+/** 支持的采集来源平台（面板展示用；抖音 / TikTok 已下线） */
 export const PLATFORM_INFO = [
-  { key: 'douyin' as CollectPlatform, label: '抖音' },
   { key: 'xiaohongshu' as CollectPlatform, label: '小红书' },
-  { key: 'tiktok' as CollectPlatform, label: 'TikTok' },
   { key: 'instagram' as CollectPlatform, label: 'Instagram' },
   { key: 'youtube' as CollectPlatform, label: 'YouTube' },
 ];

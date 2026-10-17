@@ -1,9 +1,8 @@
 /**
  * 采集编排：分享文案解析 → 平台抓取 → 媒体转存 → 诚实的结果。
  *
- * 平台通道分工：
- * - YouTube / TikTok：官方 oEmbed（TikTok 配置 sidecar 时优先走 sidecar）
- * - 抖音：Douyin_TikTok_Download_API sidecar（推荐）→ 分享页 SSR → iteminfo
+ * 平台通道分工（2026-10 起仅支持以下来源）：
+ * - YouTube：yt-dlp 通用通道（免登录，公开内容；DASH 分离流经 ffmpeg 合并转存）
  * - 小红书：短链展开 + __INITIAL_STATE__ 解析（已验证完整可用）
  * - Instagram：yt-dlp（公开内容免登录）
  *
@@ -18,16 +17,12 @@ import {
   type ParsedShare,
 } from '../../../../src/utils/shareLink';
 import { fetchBinary, UA_MOBILE } from './http';
-import { fetchOEmbed } from './oembed';
-import { collectDouyin } from './douyin';
 import { collectXiaohongshu } from './xiaohongshu';
 import { collectInstagram } from './instagram';
-import { collectViaDouyinApi } from './douyinApi';
 import { collectViaYtDlp } from './ytDlpCollect';
 import { downloadImage } from './download';
 import type { PlatformFindings } from './types';
 import { saveBuffer, extFromMime } from '../mediaStore';
-import { config } from '../../env';
 
 /** 字段来源（ provenance，界面可展示「这条从哪来」） */
 export type FieldSource = 'share' | 'platform' | 'none';
@@ -75,8 +70,9 @@ export interface CollectFailure {
 export type CollectResponse = ({ ok: true } & CollectOutcome) | CollectFailure;
 
 /** 采集源平台 → 本平台的目标发布平台（与前端 collectService 同口径） */
-function mapToTargetPlatform(source: ParsedShare['platform']): Platform {
-  return source === 'douyin' || source === 'tiktok' ? 'douyin' : 'xiaohongshu';
+function mapToTargetPlatform(_source: ParsedShare['platform']): Platform {
+  // 当前支持的采集来源（小红书 / Instagram / YouTube）统一映射到「小红书」发布平台
+  return 'xiaohongshu';
 }
 
 export async function collectFromShareText(
@@ -110,12 +106,7 @@ export async function collectFromShareText(
   let images: string[] = [];
   let coverImage = '';
   let videoUrl: string | null = null;
-  let mediaType: MediaType =
-    parsed.platform === 'douyin' ||
-    parsed.platform === 'tiktok' ||
-    parsed.platform === 'youtube'
-      ? 'video'
-      : 'image';
+  let mediaType: MediaType = parsed.platform === 'youtube' ? 'video' : 'image';
   let contentId = parsed.contentId;
   let finalUrl = parsed.url;
   let limitation = '';
@@ -123,59 +114,13 @@ export async function collectFromShareText(
   // ── 按平台抓取 ──
   try {
     if (parsed.platform === 'youtube') {
-      // 主通道：yt-dlp 拉真视频（免登录，公开内容）。仅 oEmbed 拿不到视频。
-      const ydl = await collectViaYtDlp(parsed);
-      // 注意：yt-dlp 通道把视频直接下载转存到本地（videoLocalUrl），
-      // 不一定带远程直链（videoUrl），两者任一存在即视为抓到视频。
-      if (ydl.videoUrl || ydl.videoLocalUrl) {
-        await applyFindings(ydl);
-      } else {
-        // 兜底：oEmbed 至少给标题 / 作者 / 封面
-        const oembed = await fetchOEmbed(parsed.platform, parsed.url);
-        if (oembed) {
-          if (oembed.title) title = oembed.title;
-          if (oembed.author) author = oembed.author;
-          if (oembed.thumbnail) {
-            const local = await downloadImage(oembed.thumbnail);
-            if (local) coverImage = local;
-          }
-        } else {
-          limitation = `${platformLabel} 抓取未返回数据，已提取分享文案中的线索`;
-        }
-      }
-    } else if (parsed.platform === 'tiktok') {
-      // 配置了 sidecar 优先走它（无水印）；否则 oEmbed 仅给标题/作者/封面
-      if (config.douyinApiUrl) {
-        await applyFindings(await collectViaDouyinApi(parsed));
-      } else {
-        const oembed = await fetchOEmbed(parsed.platform, parsed.url);
-        if (oembed) {
-          if (oembed.title) title = oembed.title;
-          if (oembed.author) author = oembed.author;
-          if (oembed.thumbnail) {
-            const local = await downloadImage(oembed.thumbnail);
-            if (local) coverImage = local;
-          }
-        } else {
-          limitation = `${platformLabel} oEmbed 未返回数据，已提取分享文案中的线索`;
-        }
-      }
-    } else if (parsed.platform === 'douyin') {
-      await applyFindings(await collectDouyin(parsed));
+      // 主通道：yt-dlp 拉元数据 + 视频（免登录，公开内容；DASH 分离流经 ffmpeg 合并转存）。
+      // yt-dlp 拿不到视频时也会给标题 / 作者 / 封面，直接采纳即可。
+      await applyFindings(await collectViaYtDlp(parsed));
     } else if (parsed.platform === 'xiaohongshu') {
       await applyFindings(await collectXiaohongshu(parsed));
     } else if (parsed.platform === 'instagram') {
       await applyFindings(await collectInstagram(parsed));
-    }
-
-    // 兜底：抖音 / TikTok 主通道（sidecar / SSR / iteminfo / oEmbed）没拿到视频时，
-    // 用 yt-dlp 再试（免登录；TikTok 天然无水印，抖音可能带水印，作为最后手段）。
-    // YouTube 已在上面分支优先走 yt-dlp，这里不再重复。
-    if (
-      !videoUrl &&
-      (parsed.platform === 'douyin' || parsed.platform === 'tiktok')
-    ) {
-      await applyFindings(await collectViaYtDlp(parsed));
     }
   } catch (err) {
     limitation = `抓取过程出错（${(err as Error).message}），已提取分享文案中的线索`;
@@ -218,15 +163,13 @@ export async function collectFromShareText(
       videoUrl = f.videoUrl; // 视频地址先记下，转存失败则置空并说明
       const bin = await fetchBinary(f.videoUrl, {
         ua: UA_MOBILE,
-        // 按平台带 Referer（抖音 CDN 校验；Instagram 的 scontent 一般不需要）
+        // 按平台带 Referer（小红书 CDN 校验较严；Instagram 的 scontent 一般不需要）
         referer:
-          srcPlatform === 'douyin'
-            ? 'https://www.douyin.com/'
-            : srcPlatform === 'instagram'
-              ? 'https://www.instagram.com/'
-              : srcPlatform === 'xiaohongshu'
-                ? 'https://www.xiaohongshu.com/'
-                : undefined,
+          srcPlatform === 'instagram'
+            ? 'https://www.instagram.com/'
+            : srcPlatform === 'xiaohongshu'
+              ? 'https://www.xiaohongshu.com/'
+              : undefined,
         maxBytes: 200 * 1024 * 1024,
       });
       if (bin && bin.byteLength > 0 && bin.contentType.startsWith('video/')) {
@@ -252,11 +195,11 @@ export async function collectFromShareText(
     }
   }
 
-  // contentId：短链展开后更新为真实 ID
+  // contentId：小红书短链展开后更新为真实 ID
   if (parsed.isShortLink) {
-    const m = finalUrl.match(/\/video\/(\d{6,})/)
-      ?? finalUrl.match(/\/explore\/([a-f0-9]{20,})/i)
-      ?? finalUrl.match(/\/discovery\/item\/([a-f0-9]{20,})/i);
+    const m =
+      finalUrl.match(/\/explore\/([a-f0-9]{20,})/i) ??
+      finalUrl.match(/\/discovery\/item\/([a-f0-9]{20,})/i);
     if (m) contentId = m[1];
   }
 

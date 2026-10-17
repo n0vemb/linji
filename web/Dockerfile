@@ -1,14 +1,14 @@
 # LinJi·灵集 后端镜像
 # 采集功能依赖两个外部工具（都是成熟开源方案，不手搓签名）：
-#   1. curl   —— 抖音/小红书短链的 JS 风控按 TLS 指纹分流，
+#   1. curl   —— 小红书短链的 JS 风控按 TLS 指纹分流，
 #                undici 100% 被拦，curl 稳定通过（实测）
-#   2. yt-dlp —— Instagram 公开内容解析（免登录）
-# 抖音的 X-Bogus/a_bogus 签名由 sidecar 容器处理（见 docker-compose.yml），
-# 未配置 sidecar 时自动走分享页/iteminfo 降级链。
+#   2. yt-dlp —— YouTube / 小红书 / Instagram 公开内容解析（免登录）
+# 采集来源平台（2026-10 起）：小红书、Instagram、YouTube。
+# 抖音 / TikTok 已下线 —— 其取流接口需登录态 cookie，长期 403。
 FROM node:22-slim
 
 # ffmpeg 必需：YouTube 等平台只提供 DASH 分离流（视频/音频独立），
-# 需 ffmpeg 合并为单文件；TikTok / Instagram 也借它拿到最佳画质。
+# 需 ffmpeg 合并为单文件；小红书 / Instagram 也借它拿到最佳画质。
 RUN apt-get update \
   && apt-get install -y --no-install-recommends curl python3 ffmpeg ca-certificates \
   && rm -rf /var/lib/apt/lists/*
@@ -34,8 +34,6 @@ ENV PORT=8787
 # 海外部署：平台直连，COLLECT_PROXY 留空。
 # 如在被墙网络调试，设为本地代理（注意：代理只覆盖海外域名，国内平台自动直连）。
 ENV COLLECT_PROXY=
-# 抖音/TikTok 解析服务地址（compose 里默认指向 douyin-api sidecar）
-ENV DOUYIN_API_URL=http://douyin-api:80
 # 生产必须改！JWT 密钥（docker-compose 会用环境变量覆盖）
 ENV JWT_SECRET=change-me-in-production
 

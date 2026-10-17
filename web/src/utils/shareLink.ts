@@ -6,11 +6,12 @@
  * 且引导语里混入了标题、作者、话题等有用信息。直接把整段丢给 URL 解析器会失败。
  *
  * 真实样本（线上格式，2025-2026）：
- *   抖音   7.85 复制打开抖音，看看【夏日穿搭分享】的作品 #穿搭 https://v.douyin.com/iRNBho6u/ 复制此链接，打开Dou音搜索，直接观看视频！
  *   小红书 31 【小个子显高穿搭 - 小鹿 | 小红书 - 你的生活指南】😆 xhslink.com/a/xxxxx 复制本条信息，打开【小红书】App查看精彩内容！
- *   TikTok Check out this video: https://www.tiktok.com/@user/video/7123456789012345678
  *   Instagram Check out this reel by @nick: https://www.instagram.com/reel/AbCdEf/
  *   YouTube https://youtu.be/dQw4w9WgXcQ  /  https://www.youtube.com/watch?v=dQw4w9WgXcQ
+ *
+ * ⚠️ 2026-10 起不再支持抖音 / TikTok 采集（取流接口需 cookie，长期 403），
+ * 相关解析逻辑已移除；yt-dlp 通道保留，供 YouTube / 小红书 / Instagram 使用。
  *
  * 本模块职责边界（纯函数，可测，无网络）：
  *   ① 清洗分享文案（全角空格、零宽字符、表情）
@@ -21,13 +22,13 @@
  * ⚠️ 不负责「抓取视频和图片」—— 那是 collectService 的事，原因见该文件顶部说明。
  */
 
-/** 可采集的来源平台（注意：与灵感的目标发布平台 Platform 不同） */
-export type CollectPlatform =
-  | 'douyin'
-  | 'xiaohongshu'
-  | 'instagram'
-  | 'tiktok'
-  | 'youtube';
+/**
+ * 可采集的来源平台（注意：与灵感的目标发布平台 Platform 不同）
+ *
+ * 2026-10 起仅保留小红书 / Instagram / YouTube —— 抖音与 TikTok 的取流接口
+ * 需要登录态 cookie，长期返回 403，已整体下线。
+ */
+export type CollectPlatform = 'xiaohongshu' | 'instagram' | 'youtube';
 
 export interface ParsedShare {
   /** 识别到的平台 */
@@ -36,11 +37,11 @@ export interface ParsedShare {
   url: string;
   /** 平台内容 ID；短链只能拿到短码，需服务端 302 展开后才��真实 ID */
   contentId: string;
-  /** 是否是短链（v.douyin.com / xhslink.com 这类，需服务端跟随跳转） */
+  /** 是否是短链（xhslink.com 这类，需服务端跟随跳转） */
   isShortLink: boolean;
   /** 从分享文案里尽力提取的标题线索（不保证准确，仅用于预填） */
   titleHint: string | null;
-  /** 作者线索（抖音/小红书文案里常带） */
+  /** 作者线索（小红书文案里常带） */
   authorHint: string | null;
   /** 分享文案里的 #话题 */
   tagHints: string[];
@@ -48,25 +49,23 @@ export interface ParsedShare {
   raw: string;
 }
 
-/** 平台元数据：域名、显示名、是否官方支持 oEmbed */
+/** 平台元数据：域名、显示名 */
 export const PLATFORM_META: Record<
   CollectPlatform,
   { label: string; domains: string[] }
 > = {
-  douyin: { label: '抖音', domains: ['douyin.com', 'iesdouyin.com'] },
   xiaohongshu: {
     label: '小红书',
     // 实测：分享短链存在 xhslink.com / xhslink.cn / xhslink.cn/o/ 三种形态
     domains: ['xhslink.com', 'xhslink.cn', 'xiaohongshu.com'],
   },
   instagram: { label: 'Instagram', domains: ['instagram.com', 'instagr.am'] },
-  tiktok: { label: 'TikTok', domains: ['tiktok.com'] },
   youtube: { label: 'YouTube', domains: ['youtube.com', 'youtu.be'] },
 };
 
-const SHORT_DOMAINS = ['v.douyin.com', 'xhslink.com', 'xhslink.cn'];
+const SHORT_DOMAINS = ['xhslink.com', 'xhslink.cn'];
 
-/** 匹配「带协议的 URL」或「裸域名 + 路径」（小红书/抖音分享里常省略 https://） */
+/** 匹配「带协议的 URL」或「裸域名 + 路径」（小红书分享里常省略 https://） */
 const URL_RE = new RegExp(
   `(https?:\\/\\/[^\\s一-龥]+|(?:[a-z0-9-]+\\.)+(?:com|cn|net|me|tv|co|app|xyz|top|link)\\/[^\\s一-龥]*)`,
   'gi'
@@ -76,7 +75,7 @@ const URL_RE = new RegExp(
  * 清洗分享文案：
  *  - 全角空格（U+3000）/ 不换行空格（U+00A0）→ 普通空格
  *  - 零宽字符（U+200B-200D）、BOM（U+FEFF）→ 删除
- *    （小红书 / 抖音分享文案里常有零宽字符，不清会导致链接识别失败）
+ *    （小红书分享文案里常有零宽字符，不清会导致链接识别失败）
  *  - emoji → 空格
  */
 export function cleanShareText(raw: string): string {
@@ -141,7 +140,7 @@ export function detectPlatform(url: string): CollectPlatform | null {
 
 /**
  * 提取内容 ID。
- * 短链（v.douyin.com/xxx、xhslink.com/a/xxx）只能拿到短码，
+ * 短链（xhslink.com/a/xxx）只能拿到短码，
  * 真实内容 ID 需要服务端跟随 302 后再解析。
  */
 export function extractContentId(url: string, platform: CollectPlatform): string {
@@ -166,25 +165,10 @@ export function extractContentId(url: string, platform: CollectPlatform): string
       if (['shorts', 'embed', 'live'].includes(seg[0] ?? '') && seg[1]) return seg[1];
       return seg[seg.length - 1] ?? '';
     }
-    case 'tiktok': {
-      // /@user/video/ID
-      const vi = seg.findIndex((s) => s === 'video');
-      if (vi >= 0 && seg[vi + 1]) return seg[vi + 1];
-      // /@user
-      const at = seg.find((s) => s.startsWith('@'));
-      return at ? at.replace('@', '') : '';
-    }
     case 'instagram': {
       // /reel/ID、/p/ID、/tv/ID
       if (['p', 'reel', 'reels', 'tv'].includes(seg[0] ?? '') && seg[1]) return seg[1];
       return '';
-    }
-    case 'douyin': {
-      // /video/ID（长链）
-      const vi = seg.findIndex((s) => s === 'video');
-      if (vi >= 0 && seg[vi + 1]) return seg[vi + 1];
-      // 短链：/xxx
-      return seg[seg.length - 1] ?? '';
     }
     case 'xiaohongshu': {
       // /explore/ID、/discovery/item/ID、/a/短码
@@ -212,7 +196,7 @@ export function isShortLink(url: string, platform: CollectPlatform): boolean {
 /**
  * 抽取分享文案里的 #话题。
  *
- * 注意：平台分享常把话题**截断**成「...#」或「#...」（如抖音样本里的
+ * 注意：平台分享常把话题**截断**成「...#」或「#...」（如小红书样本里的
  * `效果实录#... https://...`），这种不是真话题名，必须过滤掉，
  * 否则会回填一个无意义的 `#...` 到用户表单里。
  */
@@ -239,8 +223,8 @@ function extractHints(
 ): { title: string | null; author: string | null } {
   const cleaned = cleanShareText(text);
 
-  // 按平台分派：抖音与小红书**都用【】包裹内容**，格式却不同，
-  // 先匹配通用【】会把抖音文案误判成小红书（曾导致「小鹿的作品」取不到作者）。
+  // 小红书用【】包裹内容，且存在多种格式，必须单独分派处理
+  // （早期与别平台共用通用【】匹配时，出现过「小鹿的作品」取不到作者的问题）。
   if (platform === 'xiaohongshu') {
     // 格式 A（App 内分享）：【标题 - 作者 | 小红书 - 你的生活指南】
     const bracket = cleaned.match(/【([^】]+)】/);
@@ -288,22 +272,8 @@ function extractHints(
     return { title: null, author: null };
   }
 
-  if (platform === 'douyin') {
-    // 抖音：看看【XXX的作品】→ 作者；看看【XXX】→ 标题
-    const m = cleaned.match(/看看【([^】]+)】/);
-    if (m) {
-      const inner = m[1].trim();
-      const authorMatch = inner.match(/^(.+?)的(?:作品|视频|笔记)$/);
-      if (authorMatch) return { title: null, author: authorMatch[1].trim() };
-      return { title: inner, author: null };
-    }
-    // 无「看看」前缀时，退化为取【】内文本
-    const m2 = cleaned.match(/【([^】]+)】/);
-    if (m2) return { title: m2[1].trim(), author: null };
-    return { title: null, author: null };
-  }
-
-  // 其他平台：分享文案通常不含【】，标题走 oEmbed（后端补全）
+  // 其他平台（Instagram / YouTube）：分享文案通常不含【】，
+  // 标题与作者由后端采集通道（yt-dlp 等）补全
   return { title: null, author: null };
 }
 /**

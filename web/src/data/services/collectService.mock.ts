@@ -13,25 +13,24 @@ import { mapToTargetPlatform } from './collectTypes';
  * ════════════════════════════════════════════════════════════════════
  * 已实测的平台能力（2026-10，服务器部署于海外，直连无代理）
  * ════════════════════════════════════════════════════════════════════
- * | 平台 | 短链展开 | 标题/作者/封面 | 视频/图片/话题 |
+ * | 平台 | 链接解析 | 标题/作者/封面 | 视频/图片/话题 |
  * |---|---|---|---|
- * | YouTube    | ✅ | ✅ 官方 oEmbed | 封面图；视频需转存 |
- * | TikTok     | ✅ | ✅ 官方 oEmbed | 封面图；视频需转存 |
- * | 抖音       | ✅ 302 → itemId | ⚠️ 需签名接口 | 需移动端分享页 / 后端签名 |
- * | 小红书     | ✅ | ⚠️ 笔记详情 SSR | 需 xsec_token，部分需登录 |
- * | Instagram  | ✅ | ⚠️ 官方需 token | 受限 |
+ * | YouTube    | ✅ | ✅ yt-dlp 元数据 | ✅ 视频转存（ffmpeg 合并 DASH 流） |
+ * | 小红书     | ✅ 短链展开 | ✅ 笔记详情 SSR | ✅ 视频/图片直链转存（yt-dlp 兜底） |
+ * | Instagram  | ✅ | ✅ yt-dlp 免登录 | ✅ 视频/图片转存 |
+ *
+ * 已下线：抖音 / TikTok —— 取流接口需登录态 cookie，长期 403（2026-10 移除）。
  *
  * 关键事实（影响架构决策）：
- * 1. 抖音/小红书的**分享文案本身就是链接载体** —— 短链 + 标题 + #话题已足够
- *    完成 60% 的预填，这是本功能最可靠的价值来源。
- * 2. 抖音/小红书的**正文与图片列表是 JS 运行时渲染或需签名接口**，
- *    纯服务端 HTML 抓取拿不到（实测 302 后页面仅 34KB SSR 兜底文案）。
+ * 1. 小红书的**分享文案本身就是链接载体** —— 短链 + 标题 + #话题已足够
+ *    完成大部分预填，这是本功能最可靠的价值来源。
+ * 2. 小红书的**正文与图片列表是 JS 运行时渲染或需签名接口**，
+ *    纯服务端 HTML 抓取只能拿到 SSR 兜底内容，故视频走 yt-dlp 兜底。
  * 3. 因此本服务**绝不伪造数据**：拿不到就如实降级为「链接已识别，请手动补全」，
  *    把平台能力和缺口明确告诉用户，而不是编一段假文案假装采集成功。
  *
- * 前端定位：`collectService` 在浏览器直接调用平台 oEmbed（同源 CORS 允许时）
- * 或走后端 `/api/collect`（生产推荐）。当前初版走本地启发式 + 真实解析，
- * 真实网络抓取由后端承接（见架构文档 Deferred 项）。
+ * 前端定位：mock 实现只做本地启发式解析（不发起网络请求），
+ * 真实网络抓取由后端 `/api/collect` 承接（live 模式）。
  */
 
 /** 抽取到的标题线索已在上文 parse 处理；这里仅做占位封面配色 */
@@ -46,15 +45,11 @@ function hashStr(s: string): number {
 /** 无真实封面时的占位色（与 InspirationCard 一致的平涂色相） */
 function placeholderCover(source: CollectPlatform, seed: number): string {
   const hue =
-    source === 'douyin'
-      ? 205 + (seed % 30)
-      : source === 'xiaohongshu'
-        ? 338 + (seed % 30)
-        : source === 'youtube'
-          ? 0 + (seed % 20)
-          : source === 'tiktok'
-            ? 170 + (seed % 30)
-            : 280 + (seed % 30);
+    source === 'xiaohongshu'
+      ? 338 + (seed % 30)
+      : source === 'youtube'
+        ? 0 + (seed % 20)
+        : 280 + (seed % 30); // Instagram
   return `mock:collect_${hue}`;
 }
 
@@ -123,8 +118,8 @@ export async function collectFromParsed(
       `已识别为${platformLabel}分享链接` +
       (got.length > 0 ? `，从分享文案中提取到${got.join('、')}` : '') +
       `。${platformLabel}的笔记正文与图片列表为动态加载，需后端补全；请在下方补充文案与图片。`;
-  } else if (parsed.platform === 'youtube' || parsed.platform === 'tiktok') {
-    note = `已识别为${platformLabel}链接。标题与封面可通过官方 oEmbed 由后端补全，视频文件需转存；请手动补充封面图。`;
+  } else if (parsed.platform === 'youtube') {
+    note = `已识别为${platformLabel}链接。标题、封面与视频由后端 yt-dlp 抓取并转存；请手动补充封面图。`;
   } else {
     note =
       `已识别为${platformLabel}链接` +
@@ -144,11 +139,8 @@ export async function collectFromParsed(
     title,
     copy,
     tags,
-    // 视频平台默认按 video，图集平台按 image
-    mediaType:
-      parsed.platform === 'douyin' || parsed.platform === 'tiktok' || parsed.platform === 'youtube'
-        ? 'video'
-        : 'image',
+    // YouTube 默认按 video；小红书 / Instagram 按 image（视频型由后端实测判定）
+    mediaType: parsed.platform === 'youtube' ? 'video' : 'image',
     coverImage: placeholderCover(parsed.platform, seed),
     videoUrl: null,
     authorName: parsed.authorHint,

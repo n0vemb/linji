@@ -2,16 +2,9 @@
 # 背景：本机 dockerd 的 iptables/nft 规则未建立（DOCKER 链缺失），
 #       端口发布（DNAT）必失败且重启 dockerd 会波及 acg 业务。
 #       → 两个容器均用 host 网络，应用直接绑宿主端口，绕开 NAT。
-# 端口：linji 8899（8787/8788 已被其他业务占用），douyin-api 8898（80 被 nginx 占用）
+# 端口：linji 8899（8787/8788 已被其他业务占用）
+# 注：原 douyin-api sidecar（8898）已下线 —— 抖音 / TikTok 采集整体移除。
 services:
-  douyin-api:
-    image: evil0ctal/douyin_tiktok_download_api:V4.1.2
-    container_name: linji-douyin-api
-    restart: unless-stopped
-    network_mode: host
-    # 覆盖镜像默认 CMD（默认监听 80，与 nginx 冲突）
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8898"]
-
   linji:
     build:
       context: .
@@ -27,8 +20,4 @@ services:
       # 缺失即拒绝启动（fail-fast），杜绝弱密钥上线；.env 已配置
       JWT_SECRET: ${JWT_SECRET:?请在 .env 或环境变量中设置 JWT_SECRET}
       COLLECT_PROXY: ""
-      # host 模式下无 compose DNS，sidecar 在本机 8898
-      DOUYIN_API_URL: "http://127.0.0.1:8898"
-    depends_on:
-      - douyin-api
     restart: unless-stopped
