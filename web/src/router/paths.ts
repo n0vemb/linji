@@ -12,6 +12,7 @@ export const PATHS = {
   MINE: '/mine', // 05 我的灵感
   HEALTH: '/health/:id', // 06 灵感体检（完整报告）
   FAVORITES: '/favorites', // 我的收藏（占位 / 基础展示）
+  SETTINGS: '/settings', // 账号设置（修改密码）
 } as const;
 
 /** 灵感详情路径 builder */

@@ -8,6 +8,7 @@ import AuditPage from '@/pages/AuditPage';
 import MinePage from '@/pages/MinePage';
 import HealthPage from '@/pages/HealthPage';
 import FavoritesPage from '@/pages/FavoritesPage';
+import SettingsPage from '@/pages/SettingsPage';
 import LoginPage from '@/pages/LoginPage';
 import { useAppStore } from '@/store/useAppStore';
 import { COLORS } from '@/styles/tokens';
@@ -56,6 +57,7 @@ export default function AppRouter() {
         <Route path="/mine" element={<MinePage />} />
         <Route path="/health/:id" element={<HealthPage />} />
         <Route path="/favorites" element={<FavoritesPage />} />
+        <Route path={PATHS.SETTINGS} element={<SettingsPage />} />
         <Route path="*" element={<Navigate to={PATHS.PLAZA} replace />} />
       </Route>
     </Routes>

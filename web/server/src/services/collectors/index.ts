@@ -23,6 +23,7 @@ import { collectDouyin } from './douyin';
 import { collectXiaohongshu } from './xiaohongshu';
 import { collectInstagram } from './instagram';
 import { collectViaDouyinApi } from './douyinApi';
+import { collectViaYtDlp } from './ytDlpCollect';
 import { downloadImage } from './download';
 import type { PlatformFindings } from './types';
 import { saveBuffer, extFromMime } from '../mediaStore';
@@ -122,19 +123,26 @@ export async function collectFromShareText(
   // ── 按平台抓取 ──
   try {
     if (parsed.platform === 'youtube') {
-      const oembed = await fetchOEmbed(parsed.platform, parsed.url);
-      if (oembed) {
-        if (oembed.title) title = oembed.title;
-        if (oembed.author) author = oembed.author;
-        if (oembed.thumbnail) {
-          const local = await downloadImage(oembed.thumbnail);
-          if (local) coverImage = local;
-        }
+      // 主通道：yt-dlp 拉真视频（免登录，公开内容）。仅 oEmbed 拿不到视频。
+      const ydl = await collectViaYtDlp(parsed);
+      if (ydl.videoUrl) {
+        await applyFindings(ydl);
       } else {
-        limitation = `${platformLabel} oEmbed 未返回数据，已提取分享文案中的线索`;
+        // 兜底：oEmbed 至少给标题 / 作者 / 封面
+        const oembed = await fetchOEmbed(parsed.platform, parsed.url);
+        if (oembed) {
+          if (oembed.title) title = oembed.title;
+          if (oembed.author) author = oembed.author;
+          if (oembed.thumbnail) {
+            const local = await downloadImage(oembed.thumbnail);
+            if (local) coverImage = local;
+          }
+        } else {
+          limitation = `${platformLabel} 抓取未返回数据，已提取分享文案中的线索`;
+        }
       }
     } else if (parsed.platform === 'tiktok') {
-      // 配置了 sidecar 优先走它（oEmbed 只有标题/作者/封面，sidecar 有全文+媒体）
+      // 配置了 sidecar 优先走它（无水印）；否则 oEmbed 仅给标题/作者/封面
       if (config.douyinApiUrl) {
         await applyFindings(await collectViaDouyinApi(parsed));
       } else {
@@ -156,6 +164,16 @@ export async function collectFromShareText(
       await applyFindings(await collectXiaohongshu(parsed));
     } else if (parsed.platform === 'instagram') {
       await applyFindings(await collectInstagram(parsed));
+    }
+
+    // 兜底：抖音 / TikTok 主通道（sidecar / SSR / iteminfo / oEmbed）没拿到视频时，
+    // 用 yt-dlp 再试（免登录；TikTok 天然无水印，抖音可能带水印，作为最后手段）。
+    // YouTube 已在上面分支优先走 yt-dlp，这里不再重复。
+    if (
+      !videoUrl &&
+      (parsed.platform === 'douyin' || parsed.platform === 'tiktok')
+    ) {
+      await applyFindings(await collectViaYtDlp(parsed));
     }
   } catch (err) {
     limitation = `抓取过程出错（${(err as Error).message}），已提取分享文案中的线索`;
@@ -201,7 +219,9 @@ export async function collectFromShareText(
             ? 'https://www.douyin.com/'
             : srcPlatform === 'instagram'
               ? 'https://www.instagram.com/'
-              : undefined,
+              : srcPlatform === 'xiaohongshu'
+                ? 'https://www.xiaohongshu.com/'
+                : undefined,
         maxBytes: 200 * 1024 * 1024,
       });
       if (bin && bin.byteLength > 0 && bin.contentType.startsWith('video/')) {

@@ -77,6 +77,36 @@ function imageUrl(img: XhsImage): string {
   return img.urlDefault ?? img.urlPre ?? '';
 }
 
+/**
+ * 从笔记 video 字段提取播放地址。
+ * 小红书视频地址就在 __INITIAL_STATE__ 的 note.video.media 里（签名有时效，
+ * 但 SSR 刚生成、立即抓取可用）。优先 h264 流的 urlList（最高画质），
+ * 退而求其次 videoInfo 的 urlList；多条里取第一条有效直链。
+ */
+interface XhsVideoMedia {
+  stream?: { h264?: Array<{ urlList?: string[] }> };
+  videoInfo?: { urlList?: string[]; url?: string };
+}
+function extractVideoUrl(note: XhsNote): string | null {
+  const media = (note as unknown as { video?: { media?: XhsVideoMedia } }).video
+    ?.media;
+  if (!media) return null;
+  const candidates: string[] = [];
+  for (const s of media.stream?.h264 ?? []) {
+    if (Array.isArray(s?.urlList)) candidates.push(...s.urlList);
+  }
+  if (Array.isArray(media.videoInfo?.urlList)) {
+    candidates.push(...media.videoInfo!.urlList!);
+  }
+  if (typeof media.videoInfo?.url === 'string') {
+    candidates.push(media.videoInfo.url);
+  }
+  const valid = candidates.filter(
+    (u): u is string => typeof u === 'string' && /^https?:\/\//.test(u)
+  );
+  return valid[0] ?? null;
+}
+
 export async function collectXiaohongshu(
   parsed: ParsedShare
 ): Promise<PlatformFindings> {
@@ -151,8 +181,15 @@ export async function collectXiaohongshu(
   const mediaType: MediaType = note.type === 'video' ? 'video' : 'image';
   findings.mediaType = mediaType;
   if (mediaType === 'video') {
-    findings.limitation =
-      '视频笔记的播放地址需要小红书签名接口，当前未接入；已取到封面与文案';
+    // 视频笔记：播放地址虽带签名时效，但 SSR 刚生成、立即转存可用
+    const videoUrl = extractVideoUrl(note);
+    if (videoUrl) {
+      findings.videoUrl = videoUrl;
+      findings.fetched.push('视频地址');
+    } else {
+      findings.limitation =
+        '视频笔记的播放地址未能从页面提取（签名失效 / 结构变化），已取到封面与文案';
+    }
   }
   return findings;
 }

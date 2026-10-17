@@ -1,7 +1,9 @@
 import { Box, Typography } from '@mui/material';
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import { useNavigate } from 'react-router-dom';
 import { COLORS, LAYOUT } from '@/styles/tokens';
-import { NAV_ITEMS } from '@/router/paths';
+import { NAV_ITEMS, PATHS } from '@/router/paths';
 import NavItem from './NavItem';
 import { useAppStore } from '@/store/useAppStore';
 import { apiMode } from '@/data/services/apiMode';
@@ -17,6 +19,7 @@ interface SidebarProps {
  */
 export default function Sidebar({ onNavigate }: SidebarProps) {
   const currentUser = useAppStore((state) => state.currentUser);
+  const navigate = useNavigate();
   const live = apiMode() === 'live';
 
   // live 模式：审核台仅对管理员展示（后端也有权限门控，这里只是不暴露入口）
@@ -116,6 +119,32 @@ export default function Sidebar({ onNavigate }: SidebarProps) {
           </Typography>
         </Box>
       </Box>
+
+      {/* 账号设置入口（仅 live 模式，mock 无后端密码体系） */}
+      {live && (
+        <Box
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate(PATHS.SETTINGS)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') navigate(PATHS.SETTINGS);
+          }}
+          className="flex items-center gap-1.5"
+          style={{
+            marginTop: 10,
+            padding: '8px 10px',
+            borderRadius: 8,
+            cursor: 'pointer',
+            color: COLORS.sub2,
+            fontSize: 12,
+            fontWeight: 600,
+            border: `1px solid ${COLORS.line}`,
+          }}
+        >
+          <SettingsOutlinedIcon style={{ fontSize: 15 }} />
+          修改密码
+        </Box>
+      )}
     </Box>
   );
 }

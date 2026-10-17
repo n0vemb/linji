@@ -233,8 +233,12 @@ export default async function inspirationRoutes(fastify: FastifyInstance) {
         | { id: string; creator_id: string }
         | undefined;
       if (!existing) throw notFound('灵感不存在');
-      if (existing.creator_id !== me.id) {
-        throw forbidden('只有创建者可以删除该灵感');
+      // 创建者本人可删；管理员拥有审核下架权限（管理员的工具是「驳回 + 下架」，
+      // 不是编辑他人内容）。普通创作者（非创建者）一律禁止。
+      const isOwner = existing.creator_id === me.id;
+      const isAdmin = me.role === 'admin';
+      if (!isOwner && !isAdmin) {
+        throw forbidden('只有创建者或管理员可以删除该灵感');
       }
       db.prepare('DELETE FROM favorites WHERE inspiration_id = ?').run(existing.id);
       db.prepare('DELETE FROM inspirations WHERE id = ?').run(existing.id);

@@ -64,3 +64,11 @@ export async function restore(): Promise<CurrentUser | null> {
 export function logout(): void {
   clearToken();
 }
+
+/** 修改密码（live 模式）：后端校验原密码并更新哈希 */
+export async function changePassword(
+  oldPassword: string,
+  newPassword: string
+): Promise<void> {
+  await api.post('/auth/change-password', { oldPassword, newPassword });
+}

@@ -10,6 +10,7 @@ import { COLORS, TOUCH, LAYOUT } from '@/styles/tokens';
 import type { HealthReport } from '@/data/types';
 import { useAppStore } from '@/store/useAppStore';
 import { usePermission } from '@/hooks/usePermission';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useIsMobile } from '@/hooks/useBreakpoint';
 import { getMockReport } from '@/data/mock/reports';
 import MediaGallery from '@/components/common/MediaGallery';
@@ -74,16 +75,24 @@ export default function DetailPage() {
   }, [inspiration?.id]);
 
   const permission = usePermission(inspiration?.creatorID ?? '');
+  const { isAdmin } = useCurrentUser();
   // ⚠️ useIsMobile 必须在早退之前调用：直接打开详情 URL 时数据未加载，
   // inspiration 为 undefined 会走「未找到」分支；若 hook 在早退后调用，
   // 数据到达后 hook 数量变化会触发 React #310（Rendered fewer hooks）。
   const isMobile = useIsMobile();
 
+  // 删除入口：创建者本人，或管理员（审核下架）。编辑入口仍仅创建者。
+  const canDelete = permission.canDelete || isAdmin;
+
   const handleDelete = () => {
     if (!inspiration) return;
-    if (window.confirm(`确定删除「${inspiration.title}」？此操作不可撤销。`)) {
+    const confirmMsg =
+      isAdmin && !permission.canDelete
+        ? `确定下架「${inspiration.title}」？此操作不可撤销（管理员操作）。`
+        : `确定删除「${inspiration.title}」？此操作不可撤销。`;
+    if (window.confirm(confirmMsg)) {
       void removeInspiration(inspiration.id).then(() => {
-        showToast('已删除灵感');
+        showToast(isAdmin && !permission.canDelete ? '已下架灵感' : '已删除灵感');
         navigate(PATHS.MINE);
       });
     }
@@ -182,7 +191,7 @@ export default function DetailPage() {
           >
             查看完整报告
           </Button>
-          {!isMobile && permission.canEdit && (
+          {!isMobile && canDelete && (
             <>
               <Button
                 variant="outlined"
@@ -298,7 +307,7 @@ export default function DetailPage() {
       </Box>
 
       {/* 手机端：底部固定操作条（拇指热区，放最主要且破坏性的操作） */}
-      {isMobile && permission.canEdit && (
+      {isMobile && canDelete && (
         <Box
           sx={{
             position: 'fixed',

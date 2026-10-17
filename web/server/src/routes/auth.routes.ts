@@ -96,4 +96,29 @@ export default async function authRoutes(fastify: FastifyInstance) {
     if (!row) throw unauthorized('账号不存在');
     return { user: toAuthUser(row) };
   });
+
+  /** 修改密码：校验原密码 → 校验强度 → 更新哈希（必须登录） */
+  fastify.post<{
+    Body: { oldPassword?: string; newPassword?: string };
+  }>('/auth/change-password', { preHandler: [fastify.requireAuth] }, async (request) => {
+    const me = request.authUser!;
+    const { oldPassword, newPassword } = request.body ?? {};
+    if (!oldPassword || !newPassword) {
+      throw badRequest('请输入原密码和新密码');
+    }
+    if (newPassword.length < 6) {
+      throw badRequest('新密码至少 6 位');
+    }
+    const row = db
+      .prepare('SELECT * FROM users WHERE id = ?')
+      .get(me.id) as UserRow | undefined;
+    if (!row || !bcrypt.compareSync(oldPassword, row.password_hash)) {
+      throw badRequest('原密码错误');
+    }
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
+      bcrypt.hashSync(newPassword, 10),
+      me.id
+    );
+    return { ok: true };
+  });
 }
