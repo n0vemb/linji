@@ -1,0 +1,13 @@
+# 构建上下文瘦身：这些进镜像没用 / 会污染
+node_modules
+server/node_modules
+server/data
+dist
+.git
+.preview_shots
+*.log
+*.md
+.env
+.env.*
+Dockerfile
+docker-compose.yml

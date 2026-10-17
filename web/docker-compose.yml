@@ -15,7 +15,11 @@ services:
     restart: unless-stopped
 
   linji:
-    build: .
+    build:
+      context: .
+      # 构建期走宿主机网络：部分 VPS 的 DNS（systemd-resolved 私有地址）
+      # 在构建容器里不可达，会报 Temporary failure resolving 'deb.debian.org'
+      network: host
     container_name: linji
     ports:
       # 外部 8788（服务器 8787 已被其他 Node 项目占用）；容器内仍是 8787
