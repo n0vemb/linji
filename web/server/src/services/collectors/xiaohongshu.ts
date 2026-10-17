@@ -16,7 +16,10 @@
 import type { ParsedShare } from '../../../../src/utils/shareLink';
 import { extractTags } from '../../../../src/utils/shareLink';
 import type { MediaType } from '../../../../src/data/types';
-import { UA_MOBILE, fetchFollow } from './http';
+import { UA_MOBILE, fetchFollow, fetchBinary } from './http';
+import { ytDlpDownload } from './ytdlp';
+import { saveBuffer, extFromMime } from '../mediaStore';
+import { config } from '../../env';
 import type { PlatformFindings } from './types';
 
 interface XhsImage {
@@ -107,6 +110,56 @@ function extractVideoUrl(note: XhsNote): string | null {
   return valid[0] ?? null;
 }
 
+/**
+ * 解析并转存小红书视频，兜底多种失败情形：
+ *  1) SSR 解析出的签名直链立即二次转存（刚生成、时效内可用概率高）；
+ *  2) 失败（直链失效 / SSR 没解析出视频）则交 yt-dlp 原生下载转存
+ *     （yt-dlp 自带 XiaoHongShu extractor，免登录直接拿原片）；
+ *  3) 都失败则退回远程直链，让编排层再试一次。
+ * 返回 localUrl（已转存）→ 编排层直接用；remoteUrl（未转存）→ 编排层再 fetch。
+ */
+async function resolveXhsVideo(
+  note: XhsNote,
+  parsed: ParsedShare
+): Promise<{ localUrl?: string; remoteUrl?: string }> {
+  const vUrl = extractVideoUrl(note);
+
+  // 1) SSR 签名直链优先立即转存
+  if (vUrl) {
+    const bin = await fetchBinary(vUrl, {
+      ua: UA_MOBILE,
+      referer: 'https://www.xiaohongshu.com/',
+      maxBytes: config.maxVideoBytes,
+    });
+    if (bin && bin.byteLength > 0 && bin.contentType.startsWith('video/')) {
+      try {
+        return {
+          localUrl: saveBuffer(
+            Buffer.from(bin.buffer),
+            extFromMime(bin.contentType.split(';')[0] ?? '') ?? 'mp4',
+            'collected'
+          ),
+        };
+      } catch {
+        /* 落到 yt-dlp 兜底 */
+      }
+    }
+  }
+
+  // 2) yt-dlp 兜底：原生支持小红书，覆盖「SSR 没解析出视频」与「直链失效」
+  const dl = await ytDlpDownload(parsed.url, config.collectProxy || undefined);
+  if (dl) {
+    try {
+      return { localUrl: saveBuffer(dl.buffer, dl.ext, 'collected') };
+    } catch {
+      /* 落到远程直链 */
+    }
+  }
+
+  // 3) 实在不行：保留远程地址，编排层再试一次
+  return vUrl ? { remoteUrl: vUrl } : {};
+}
+
 export async function collectXiaohongshu(
   parsed: ParsedShare
 ): Promise<PlatformFindings> {
@@ -181,14 +234,16 @@ export async function collectXiaohongshu(
   const mediaType: MediaType = note.type === 'video' ? 'video' : 'image';
   findings.mediaType = mediaType;
   if (mediaType === 'video') {
-    // 视频笔记：播放地址虽带签名时效，但 SSR 刚生成、立即转存可用
-    const videoUrl = extractVideoUrl(note);
-    if (videoUrl) {
-      findings.videoUrl = videoUrl;
+    const res = await resolveXhsVideo(note, parsed);
+    if (res.localUrl) {
+      findings.videoLocalUrl = res.localUrl;
+      findings.fetched.push('视频已转存（无水印）');
+    } else if (res.remoteUrl) {
+      findings.videoUrl = res.remoteUrl;
       findings.fetched.push('视频地址');
     } else {
       findings.limitation =
-        '视频笔记的播放地址未能从页面提取（签名失效 / 结构变化），已取到封面与文案';
+        '视频笔记的播放地址未能提取 / 转存（签名失效 / 结构变化），已取到封面与文案';
     }
   }
   return findings;
